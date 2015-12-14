@@ -1,7 +1,0 @@
-MODULE    = cryptnet.dll
-IMPORTLIB = cryptnet
-IMPORTS   = crypt32
-DELAYIMPORTS = wininet
-
-C_SRCS = \
-	cryptnet_main.c

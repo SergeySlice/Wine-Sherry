@@ -1,5 +1,0 @@
-TESTDLL   = winspool.drv
-IMPORTS   = winspool advapi32
-
-C_SRCS = \
-	info.c

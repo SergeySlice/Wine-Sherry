@@ -1,4 +1,0 @@
-TESTDLL   = serialui.dll
-
-C_SRCS = \
-	confdlg.c

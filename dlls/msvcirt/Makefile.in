@@ -1,8 +1,0 @@
-MODULE    = msvcirt.dll
-IMPORTS   = msvcrt
-EXTRADEFS = -D_MSVCIRT
-PARENTSRC = ../msvcp90
-
-C_SRCS = \
-	exception.c \
-	msvcirt.c

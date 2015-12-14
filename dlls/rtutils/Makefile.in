@@ -1,6 +1,0 @@
-MODULE    = rtutils.dll
-IMPORTLIB = rtutils
-
-C_SRCS = \
-	main.c \
-	tracing.c

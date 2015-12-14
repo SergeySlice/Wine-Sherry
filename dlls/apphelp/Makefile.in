@@ -1,3 +1,0 @@
-MODULE = apphelp.dll
-
-C_SRCS = apphelp.c

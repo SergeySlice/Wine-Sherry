@@ -1,3 +1,0 @@
-MODULE    = msnet32.dll
-
-C_SRCS = msnet_main.c

@@ -1,5 +1,0 @@
-TESTDLL   = mscms.dll
-IMPORTS   = advapi32
-
-C_SRCS = \
-	profile.c

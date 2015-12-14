@@ -1,4 +1,0 @@
-MODULE = cryptext.dll
-
-C_SRCS = \
-	cryptext_main.c

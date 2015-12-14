@@ -1,8 +1,0 @@
-MODULE    = netcfgx.dll
-IMPORTS   = uuid
-
-C_SRCS = \
-	main.c \
-	netcfg.c
-
-IDL_SRCS = netcfgx_classes.idl

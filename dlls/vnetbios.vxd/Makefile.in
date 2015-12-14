@@ -1,5 +1,0 @@
-MODULE    = vnetbios.vxd
-IMPORTS   = netapi32
-
-C_SRCS = \
-	vnetbios.c

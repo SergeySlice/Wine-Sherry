@@ -1,5 +1,0 @@
-MODULE    = rasdlg.dll
-IMPORTLIB = rasdlg
-
-C_SRCS = \
-	rasdlg_main.c

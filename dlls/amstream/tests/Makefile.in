@@ -1,5 +1,0 @@
-TESTDLL   = amstream.dll
-IMPORTS   = quartz ddraw oleaut32 ole32 user32
-
-C_SRCS = \
-	amstream.c

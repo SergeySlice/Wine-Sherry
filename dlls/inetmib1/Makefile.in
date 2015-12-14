@@ -1,6 +1,0 @@
-MODULE    = inetmib1.dll
-IMPORTS   = snmpapi
-DELAYIMPORTS = iphlpapi
-
-C_SRCS = \
-	main.c

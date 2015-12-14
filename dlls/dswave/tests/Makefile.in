@@ -1,5 +1,0 @@
-TESTDLL   = dswave.dll
-IMPORTS   = ole32
-
-C_SRCS = \
-	dswave.c

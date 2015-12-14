@@ -1,5 +1,0 @@
-TESTDLL   = wldap32.dll
-IMPORTS   = wldap32
-
-C_SRCS = \
-	parse.c

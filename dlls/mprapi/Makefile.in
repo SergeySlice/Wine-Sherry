@@ -1,5 +1,0 @@
-MODULE    = mprapi.dll
-IMPORTLIB = mprapi
-
-C_SRCS = \
-	mprapi.c

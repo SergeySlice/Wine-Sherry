@@ -1,5 +1,0 @@
-TESTDLL   = ntdsapi.dll
-IMPORTS   = ntdsapi
-
-C_SRCS = \
-	ntdsapi.c

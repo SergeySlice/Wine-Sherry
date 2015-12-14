@@ -1,5 +1,0 @@
-TESTDLL   = regedit.exe
-IMPORTS   = advapi32
-
-C_SRCS = \
-	regedit.c

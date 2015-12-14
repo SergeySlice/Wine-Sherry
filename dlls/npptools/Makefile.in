@@ -1,4 +1,0 @@
-MODULE    = npptools.dll
-
-C_SRCS = \
-	main.c

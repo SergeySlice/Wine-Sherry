@@ -1,5 +1,0 @@
-MODULE    = vdmdbg.dll
-IMPORTLIB = vdmdbg
-
-C_SRCS = \
-	vdmdbg.c

@@ -1,3 +1,0 @@
-MODULE = mgmtapi.dll
-
-C_SRCS = mgmtapi.c

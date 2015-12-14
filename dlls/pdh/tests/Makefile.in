@@ -1,5 +1,0 @@
-TESTDLL   = pdh.dll
-IMPORTS   = pdh
-
-C_SRCS = \
-	pdh.c

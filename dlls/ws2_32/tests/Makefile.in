@@ -1,6 +1,0 @@
-TESTDLL   = ws2_32.dll
-IMPORTS   = ws2_32 user32
-
-C_SRCS = \
-	protocol.c \
-	sock.c

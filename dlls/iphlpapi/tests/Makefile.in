@@ -1,4 +1,0 @@
-TESTDLL   = iphlpapi.dll
-
-C_SRCS = \
-	iphlpapi.c

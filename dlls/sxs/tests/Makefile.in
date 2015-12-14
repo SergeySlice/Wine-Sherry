@@ -1,6 +1,0 @@
-TESTDLL   = sxs.dll
-IMPORTS   = sxs
-
-C_SRCS = \
-	cache.c \
-	name.c

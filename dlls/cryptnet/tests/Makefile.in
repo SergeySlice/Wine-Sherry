@@ -1,5 +1,0 @@
-TESTDLL   = cryptnet.dll
-IMPORTS   = cryptnet crypt32
-
-C_SRCS = \
-	cryptnet.c

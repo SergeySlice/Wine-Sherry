@@ -1,4 +1,0 @@
-MODULE = esent.dll
-
-C_SRCS = \
-	esent_main.c

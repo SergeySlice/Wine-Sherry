@@ -1,5 +1,0 @@
-TESTDLL   = slc.dll
-IMPORTS   = slc
-
-C_SRCS = \
-	slc.c

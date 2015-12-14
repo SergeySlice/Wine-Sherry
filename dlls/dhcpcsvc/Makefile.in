@@ -1,3 +1,0 @@
-MODULE = dhcpcsvc.dll
-
-C_SRCS = dhcpcsvc.c

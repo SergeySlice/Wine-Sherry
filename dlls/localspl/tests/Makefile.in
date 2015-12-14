@@ -1,5 +1,0 @@
-TESTDLL   = localspl.dll
-IMPORTS   = advapi32
-
-C_SRCS = \
-	localmon.c

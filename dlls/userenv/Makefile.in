@@ -1,6 +1,0 @@
-MODULE    = userenv.dll
-IMPORTS   = advapi32
-IMPORTLIB = userenv
-
-C_SRCS = \
-	userenv_main.c

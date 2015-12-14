@@ -1,4 +1,0 @@
-MODULE    = connect.dll
-
-C_SRCS = \
-	main.c

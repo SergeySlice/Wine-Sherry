@@ -1,5 +1,0 @@
-TESTDLL   = infosoft.dll
-IMPORTS   = ole32
-
-C_SRCS = \
-	infosoft.c

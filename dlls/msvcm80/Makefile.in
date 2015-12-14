@@ -1,4 +1,0 @@
-MODULE    = msvcm80.dll
-
-C_SRCS = \
-	msvcm_main.c

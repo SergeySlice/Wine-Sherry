@@ -1,5 +1,0 @@
-MODULE    = servicemodelreg.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = \
-	main.c

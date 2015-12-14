@@ -1,5 +1,0 @@
-MODULE    = normaliz.dll
-IMPORTLIB = normaliz
-
-C_SRCS = \
-	normaliz.c

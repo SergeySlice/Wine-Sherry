@@ -1,5 +1,0 @@
-TESTDLL   = credui.dll
-IMPORTS   = credui
-
-C_SRCS = \
-	credui.c

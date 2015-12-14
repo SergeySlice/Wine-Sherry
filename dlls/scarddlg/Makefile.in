@@ -1,4 +1,0 @@
-MODULE    = scarddlg.dll
-
-C_SRCS = \
-	main.c

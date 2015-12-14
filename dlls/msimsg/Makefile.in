@@ -1,3 +1,0 @@
-MODULE = msimsg.dll
-
-RC_SRCS = msimsg.rc

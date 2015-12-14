@@ -1,5 +1,0 @@
-MODULE    = mshta.exe
-APPMODE   = -mwindows -municode
-
-C_SRCS = \
-	main.c

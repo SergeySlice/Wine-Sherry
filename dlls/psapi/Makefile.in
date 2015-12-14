@@ -1,4 +1,0 @@
-MODULE    = psapi.dll
-IMPORTLIB = psapi
-
-RC_SRCS = version.rc

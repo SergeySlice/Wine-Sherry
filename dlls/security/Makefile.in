@@ -1,2 +1,0 @@
-MODULE    = security.dll
-IMPORTS   = secur32

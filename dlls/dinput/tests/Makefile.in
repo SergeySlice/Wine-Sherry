@@ -1,9 +1,0 @@
-TESTDLL   = dinput.dll
-IMPORTS   = dinput ole32 version user32
-
-C_SRCS = \
-	device.c \
-	dinput.c \
-	joystick.c \
-	keyboard.c \
-	mouse.c

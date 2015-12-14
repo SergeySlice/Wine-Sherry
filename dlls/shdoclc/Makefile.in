@@ -1,3 +1,0 @@
-MODULE    = shdoclc.dll
-
-RC_SRCS = shdoclc.rc

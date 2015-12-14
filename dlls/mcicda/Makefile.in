@@ -1,5 +1,0 @@
-MODULE    = mcicda.dll
-IMPORTS   = winmm user32
-
-C_SRCS = \
-	mcicda.c

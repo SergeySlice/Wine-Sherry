@@ -1,5 +1,0 @@
-MODULE    = unlodctr.exe
-APPMODE   = -mconsole
-IMPORTS   = loadperf
-
-C_SRCS = unlodctr_main.c

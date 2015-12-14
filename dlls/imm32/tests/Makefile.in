@@ -1,5 +1,0 @@
-TESTDLL   = imm32.dll
-IMPORTS   = imm32 user32
-
-C_SRCS = \
-	imm32.c

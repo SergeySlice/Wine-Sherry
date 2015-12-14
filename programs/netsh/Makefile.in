@@ -1,4 +1,0 @@
-MODULE    = netsh.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = netsh.c

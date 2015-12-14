@@ -1,5 +1,0 @@
-MODULE    = shfolder.dll
-IMPORTLIB = shfolder
-IMPORTS   = shell32
-
-RC_SRCS = version.rc

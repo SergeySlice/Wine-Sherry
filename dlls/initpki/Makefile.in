@@ -1,4 +1,0 @@
-MODULE    = initpki.dll
-
-C_SRCS = \
-	main.c

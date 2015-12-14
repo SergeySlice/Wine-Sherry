@@ -1,5 +1,0 @@
-MODULE    = mscat32.dll
-IMPORTS   = wintrust
-
-C_SRCS = \
-	main.c

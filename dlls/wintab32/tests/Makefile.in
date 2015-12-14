@@ -1,5 +1,0 @@
-TESTDLL   = wintab32.dll
-IMPORTS   = user32
-
-C_SRCS = \
-	context.c

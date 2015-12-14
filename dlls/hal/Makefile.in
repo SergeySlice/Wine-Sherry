@@ -1,6 +1,0 @@
-MODULE    = hal.dll
-
-C_SRCS = \
-	hal.c
-
-RC_SRCS = version.rc

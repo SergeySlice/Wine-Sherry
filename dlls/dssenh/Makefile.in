@@ -1,4 +1,0 @@
-MODULE    = dssenh.dll
-
-C_SRCS = \
-	main.c

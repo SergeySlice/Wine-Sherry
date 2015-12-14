@@ -1,5 +1,0 @@
-TESTDLL   = msvcrtd.dll
-APPMODE   = -mno-cygwin
-
-C_SRCS = \
-	debug.c

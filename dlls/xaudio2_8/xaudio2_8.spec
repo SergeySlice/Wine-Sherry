@@ -1,6 +1,0 @@
-@ stdcall XAudio2Create(ptr long long)
-@ stdcall CreateAudioVolumeMeter(ptr)
-@ stdcall CreateAudioReverb(ptr)
-@ cdecl CreateFX(ptr ptr ptr long)
-@ cdecl X3DAudioCalculate(ptr ptr ptr long ptr)
-@ cdecl X3DAudioInitialize(long float ptr)

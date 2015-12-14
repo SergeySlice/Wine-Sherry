@@ -1,5 +1,0 @@
-MODULE    = regasm.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = \
-	main.c

@@ -1,6 +1,0 @@
-MODULE    = conhost.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = conhost.c
-
-RC_SRCS = version.rc

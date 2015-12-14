@@ -1,5 +1,0 @@
-MODULE    = findstr.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = \
-	main.c

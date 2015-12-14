@@ -1,2 +1,0 @@
-MODULE    = wmi.dll
-IMPORTS   = advapi32

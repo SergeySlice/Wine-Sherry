@@ -1,5 +1,0 @@
-MODULE    = sdbinst.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = \
-	main.c

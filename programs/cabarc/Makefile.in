@@ -1,5 +1,0 @@
-MODULE    = cabarc.exe
-APPMODE   = -mconsole -municode
-IMPORTS   = cabinet
-
-C_SRCS = cabarc.c

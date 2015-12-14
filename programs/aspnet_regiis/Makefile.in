@@ -1,5 +1,0 @@
-MODULE    = aspnet_regiis.exe
-APPMODE   = -mconsole -municode
-
-C_SRCS = \
-	main.c

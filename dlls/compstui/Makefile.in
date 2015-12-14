@@ -1,5 +1,0 @@
-MODULE    = compstui.dll
-IMPORTLIB = compstui
-
-C_SRCS = \
-	compstui_main.c

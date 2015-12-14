@@ -1,4 +1,0 @@
-TESTDLL   = spoolss.dll
-
-C_SRCS = \
-	spoolss.c

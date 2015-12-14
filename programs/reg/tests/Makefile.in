@@ -1,5 +1,0 @@
-TESTDLL   = reg.exe
-IMPORTS   = advapi32
-
-C_SRCS = \
-	reg.c

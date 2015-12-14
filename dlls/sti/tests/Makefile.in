@@ -1,5 +1,0 @@
-TESTDLL   = sti.dll
-IMPORTS   = uuid ole32
-
-C_SRCS = \
-	sti.c
