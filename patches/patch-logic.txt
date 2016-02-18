@@ -1,0 +1,62 @@
+commit d89846e5d07f7affdf16a0c7e211f9a9bf2c4d09
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Wed Nov 25 22:02:20 2015 +0300
+
+    fix warning: logical not is only applied to
+          the left hand side of this comparison
+
+diff --git a/dlls/msi/tests/automation.c b/dlls/msi/tests/automation.c
+index a1df3f1..d02e9a2 100644
+--- a/dlls/msi/tests/automation.c
++++ b/dlls/msi/tests/automation.c
+@@ -878,7 +878,7 @@ static HRESULT invoke(IDispatch *pDispatch, LPCSTR szName, WORD wFlags, DISPPARA
+     hr = IDispatch_GetIDsOfNames(pDispatch, &IID_NULL, &name, 1, LOCALE_USER_DEFAULT, &dispid);
+     HeapFree(GetProcessHeap(), 0, name);
+     ok(hr == S_OK, "IDispatch::GetIDsOfNames returned 0x%08x\n", hr);
+-    if (!hr == S_OK) return hr;
++    if (hr != S_OK) return hr;
+ 
+     memset(&excepinfo, 0, sizeof(excepinfo));
+     hr = IDispatch_Invoke(pDispatch, dispid, &IID_NULL, LOCALE_NEUTRAL, wFlags, pDispParams, pVarResult, &excepinfo, NULL);
+diff --git a/dlls/tapi32/assisted.c b/dlls/tapi32/assisted.c
+index 9e68a5c..0d707db 100644
+--- a/dlls/tapi32/assisted.c
++++ b/dlls/tapi32/assisted.c
+@@ -60,7 +60,7 @@ DWORD WINAPI tapiGetLocationInfoW(LPWSTR countrycode, LPWSTR citycode)
+          'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
+          'T','e','l','e','p','h','o','n','y','\\','L','o','c','a','t','i','o','n','s',0};
+ 
+-    if(!RegOpenKeyW(HKEY_LOCAL_MACHINE, locations_keyW, &hkey) != ERROR_SUCCESS) {
++    if(RegOpenKeyW(HKEY_LOCAL_MACHINE, locations_keyW, &hkey) == ERROR_SUCCESS) {
+         valsize = sizeof( DWORD);
+         if(!RegQueryValueExW(hkey, currentidW, 0, &type, (LPBYTE) &currid, &valsize) &&
+            type == REG_DWORD) {
+diff --git a/dlls/winex11.drv/clipboard.c b/dlls/winex11.drv/clipboard.c
+index 842ebfe..f8aeec6 100644
+--- a/dlls/winex11.drv/clipboard.c
++++ b/dlls/winex11.drv/clipboard.c
+@@ -2446,9 +2446,9 @@ static int X11DRV_CLIPBOARD_QueryAvailableData(Display *display)
+     else return 0; /* No selection owner so report 0 targets available */
+ 
+     /* Read the TARGETS property contents */
+-    if (!XGetWindowProperty(display, xe.xselection.requestor, xe.xselection.property,
++    if (XGetWindowProperty(display, xe.xselection.requestor, xe.xselection.property,
+         0, 0x3FFF, True, AnyPropertyType/*XA_ATOM*/, &atype, &aformat, &cSelectionTargets, 
+-        &remain, (unsigned char**)&targetList) != Success)
++        &remain, (unsigned char**)&targetList) == Success)
+     {
+        TRACE("Type %lx,Format %d,nItems %ld, Remain %ld\n",
+              atype, aformat, cSelectionTargets, remain);
+@@ -3351,10 +3351,10 @@ static Atom X11DRV_SelectionRequest_MULTIPLE( HWND hWnd, XSelectionRequestEvent
+     /* Read the MULTIPLE property contents. This should contain a list of
+      * (target,property) atom pairs.
+      */
+-    if (!XGetWindowProperty(display, pevent->requestor, rprop,
++    if (XGetWindowProperty(display, pevent->requestor, rprop,
+                             0, 0x3FFF, False, AnyPropertyType, &atype,&aformat,
+                             &cTargetPropList, &remain,
+-                            (unsigned char**)&targetPropList) != Success)
++                            (unsigned char**)&targetPropList) == Success))
+     {
+         if (TRACE_ON(clipboard))
+         {

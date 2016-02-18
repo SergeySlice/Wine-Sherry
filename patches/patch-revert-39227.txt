@@ -1,0 +1,21 @@
+commit 8ebc82cd8dbf306256318047d5b9c009f654eac1
+Author: Henri Verbeet <hverbeet@codeweavers.com>
+Date:   Tue Jul 1 07:52:29 2014 +0200
+
+    ddraw: Check for a lost surface in ddraw_surface7_Flip().
+
+diff --git a/dlls/ddraw/surface.c b/dlls/ddraw/surface.c
+index 6452a9b..e0fdf81 100644
+--- a/dlls/ddraw/surface.c
++++ b/dlls/ddraw/surface.c
+@@ -1227,6 +1227,9 @@ static HRESULT WINAPI ddraw_surface7_Flip(IDirectDrawSurface7 *iface, 
+     if (src == iface || !(dst_impl->surface_desc.ddsCaps.dwCaps & (DDSCAPS_FRONTBUFFER | DD
+         return DDERR_NOTFLIPPABLE;
+ 
++    if (IDirectDrawSurface7_IsLost(iface) == DDERR_SURFACELOST)
++        return DDERR_SURFACELOST;
++
+     wined3d_mutex_lock();
+ 
+     tmp = dst_impl->wined3d_surface;
+

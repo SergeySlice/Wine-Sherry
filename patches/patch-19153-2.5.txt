@@ -1,0 +1,233 @@
+To avoid confusion, CreateDirect3D/ReleaseDirect3D is also renamed to
+CreateDirect3D7/ReleaseDirect3D7. bug 19153 by Andrew D'Addesio andrew at fatbag.net 
+---
+ dlls/ddraw/tests/d3d.c | 167 +++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 154 insertions(+), 13 deletions(-)
+
+diff --git a/dlls/ddraw/tests/d3d.c b/dlls/ddraw/tests/d3d.c
+index f317ae9..2505196 100644
+--- a/dlls/ddraw/tests/d3d.c
++++ b/dlls/ddraw/tests/d3d.c
+@@ -44,6 +44,25 @@ static IDirect3DExecuteBuffer *ExecuteBuffer = NULL;
+ static IDirect3DViewport *Viewport = NULL;
+ static IDirect3DLight *Light = NULL;
+ 
++struct d3d3_test_context
++{
++    IDirectDraw *ddraw;
++    IDirectDraw4 *ddraw4;
++    IDirect3D3 *d3d;
++    IDirectDrawSurface4 *surface;
++    IDirect3DDevice3 *device;
++    IDirect3DViewport3 *viewport;
++};
++
++struct d3d2_test_context
++{
++    IDirectDraw *ddraw;
++    IDirect3D2 *d3d;
++    IDirectDrawSurface *surface;
++    IDirect3DDevice2 *device;
++    IDirect3DViewport2 *viewport;
++};
++
+ typedef struct {
+     int total;
+     int rgb;
+@@ -91,7 +110,7 @@ static HRESULT WINAPI SurfaceCounter(IDirectDrawSurface7 *surface, DDSURFACEDESC
+     return DDENUMRET_OK;
+ }
+ 
+-static BOOL CreateDirect3D(void)
++static BOOL CreateDirect3D7(void)
+ {
+     HRESULT rc;
+     DDSURFACEDESC2 ddsd;
+@@ -173,7 +192,7 @@ static BOOL CreateDirect3D(void)
+     return TRUE;
+ }
+ 
+-static void ReleaseDirect3D(void)
++static void ReleaseDirect3D7(void)
+ {
+     if (lpD3DDevice != NULL)
+     {
+@@ -3741,15 +3760,6 @@ static void test_get_caps7(void)
+     /* There's no dwSize in D3DDEVICEDESC7 */
+ }
+ 
+-struct d3d2_test_context
+-{
+-    IDirectDraw *ddraw;
+-    IDirect3D2 *d3d;
+-    IDirectDrawSurface *surface;
+-    IDirect3DDevice2 *device;
+-    IDirect3DViewport2 *viewport;
+-};
+-
+ static void d3d2_release_objects(struct d3d2_test_context *context)
+ {
+     LONG ref;
+@@ -3933,18 +3943,137 @@ static void test_get_caps2(const struct d3d2_test_context *context)
+     ok(hr == D3D_OK, "GetCaps with different sizes returned hr %#x, expected D3D_OK.\n", hr);
+ }
+ 
++static void d3d3_release_objects(struct d3d3_test_context *context)
++{
++    LONG ref;
++    HRESULT hr;
++
++    if (context->viewport)
++    {
++        hr = IDirect3DDevice3_DeleteViewport(context->device, context->viewport);
++        ok(hr == D3D_OK, "DeleteViewport returned %08x.\n", hr);
++        ref = IDirect3DViewport3_Release(context->viewport);
++        ok(ref == 0, "Viewport has reference count %d, expected 0.\n", ref);
++    }
++    if (context->device)
++    {
++        ref = IDirect3DDevice3_Release(context->device);
++        ok(ref == 0, "Device has reference count %d, expected 0.\n", ref);
++    }
++    if (context->surface)
++    {
++        ref = IDirectDrawSurface4_Release(context->surface);
++        ok(ref == 0, "Surface has reference count %d, expected 0.\n", ref);
++    }
++    if (context->d3d)
++    {
++        ref = IDirect3D3_Release(context->d3d);
++        ok(ref == 1, "IDirect3D3 has reference count %d, expected 1.\n", ref);
++    }
++    if (context->ddraw4)
++    {
++        ref = IDirectDraw4_Release(context->ddraw4);
++        ok(ref == 0, "DDraw4 has reference count %d, expected 0.\n", ref);
++    }
++    if (context->ddraw)
++    {
++        ref = IDirectDraw_Release(context->ddraw);
++        ok(ref == 0, "DDraw has reference count %d, expected 0.\n", ref);
++    }
++}
++
++static BOOL d3d3_create_objects(struct d3d3_test_context *context)
++{
++    HRESULT hr;
++    DDSURFACEDESC2 ddsd2;
++    D3DVIEWPORT vp_data;
++
++    memset(context, 0, sizeof(*context));
++
++    hr = DirectDrawCreate(NULL, &context->ddraw, NULL);
++    ok(hr == DD_OK || hr == DDERR_NODIRECTDRAWSUPPORT, "DirectDrawCreate failed: %08x.\n", hr);
++    if (!context->ddraw) goto error;
++
++    hr = IDirectDraw_SetCooperativeLevel(context->ddraw, NULL, DDSCL_NORMAL);
++    ok(hr == DD_OK, "SetCooperativeLevel failed: %08x.\n", hr);
++    if (FAILED(hr)) goto error;
++
++    hr = IDirectDraw_QueryInterface(context->ddraw, &IID_IDirectDraw4, (void**) &context->ddraw4);
++    ok(hr == DD_OK || hr == E_NOINTERFACE, "QueryInterface failed: %08x.\n", hr);
++    if (!context->ddraw4) goto error;
++
++    hr = IDirectDraw_QueryInterface(context->ddraw, &IID_IDirect3D3, (void**) &context->d3d);
++    ok(hr == DD_OK || hr == E_NOINTERFACE, "QueryInterface failed: %08x.\n", hr);
++    if (!context->d3d) goto error;
++
++    memset(&ddsd2, 0, sizeof(ddsd2));
++    ddsd2.dwSize = sizeof(ddsd2);
++    ddsd2.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
++    ddsd2.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE;
++    ddsd2.dwWidth = 256;
++    ddsd2.dwHeight = 256;
++    IDirectDraw4_CreateSurface(context->ddraw4, &ddsd2, &context->surface, NULL);
++    if (!context->surface)
++    {
++        skip("DDSCAPS_3DDEVICE surface not available.\n");
++        goto error;
++    }
++
++    hr = IDirect3D3_CreateDevice(context->d3d, &IID_IDirect3DHALDevice,
++                                 context->surface, &context->device, NULL);
++    ok(hr == D3D_OK  || hr == E_OUTOFMEMORY || hr == E_NOINTERFACE, "CreateDevice failed: %08x.\n", hr);
++    if (!context->device) goto error;
++
++    hr = IDirect3D3_CreateViewport(context->d3d, &context->viewport, NULL);
++    ok(hr == D3D_OK, "CreateViewport failed: %08x.\n", hr);
++    if (!context->viewport) goto error;
++
++    hr = IDirect3DDevice3_AddViewport(context->device, context->viewport);
++    ok(hr == D3D_OK, "AddViewport returned %08x.\n", hr);
++    vp_data.dwSize = sizeof(vp_data);
++    vp_data.dwX = 0;
++    vp_data.dwY = 0;
++    vp_data.dwWidth = 256;
++    vp_data.dwHeight = 256;
++    vp_data.dvScaleX = 1;
++    vp_data.dvScaleY = 1;
++    vp_data.dvMaxX = 256;
++    vp_data.dvMaxY = 256;
++    vp_data.dvMinZ = 0;
++    vp_data.dvMaxZ = 1;
++    hr = IDirect3DViewport3_SetViewport(context->viewport, &vp_data);
++    ok(hr == D3D_OK, "SetViewport returned %08x.\n", hr);
++
++    return TRUE;
++
++error:
++    d3d3_release_objects(context);
++    return FALSE;
++}
++
++static void d3d3_nop_test(const struct d3d3_test_context *context)
++{
++}
++
+ START_TEST(d3d)
+ {
++    struct d3d3_test_context d3d3_context;
++    void (* const d3d3_tests[])(const struct d3d3_test_context *) =
++    {
++        d3d3_nop_test /* please remove once the first real d3d3 test is added */
++    };
++
+     struct d3d2_test_context d3d2_context;
+     void (* const d3d2_tests[])(const struct d3d2_test_context *) =
+     {
+         test_get_caps2
+     };
++
+     unsigned int i;
+ 
+     init_function_pointers();
+ 
+-    if(!CreateDirect3D()) {
++    if(!CreateDirect3D7()) {
+         skip("Skipping d3d7 tests\n");
+     } else {
+         LightTest();
+@@ -3963,7 +4092,19 @@ START_TEST(d3d)
+         VertexBufferLockRest();
+         z_format_test();
+         test_get_caps7();
+-        ReleaseDirect3D();
++        ReleaseDirect3D7();
++    }
++
++    for (i = 0; i < (sizeof(d3d3_tests) / sizeof(*d3d3_tests)); i++)
++    {
++        if (!d3d3_create_objects(&d3d3_context))
++        {
++            ok(!i, "Unexpected d3d3 initialization failure.\n");
++            skip("Skipping d3d3 tests.\n");
++            break;
++        }
++        d3d3_tests[i](&d3d3_context);
++        d3d3_release_objects(&d3d3_context);
+     }
+ 
+     for (i = 0; i < (sizeof(d3d2_tests) / sizeof(*d3d2_tests)); i++)
+-- 
+2.4.3
+

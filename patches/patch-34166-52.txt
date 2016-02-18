@@ -1,0 +1,74 @@
+diff -aur wine-1.7.52.orig/dlls/winemac.drv/cocoa_window.m wine-1.7.52/dlls/winemac.drv/cocoa_window.m
+--- wine-1.7.52.orig/dlls/winemac.drv/cocoa_window.m	2015-10-03 10:27:43.000000000 +0200
++++ wine-1.7.52/dlls/winemac.drv/cocoa_window.m	2015-10-03 10:34:49.000000000 +0200
+@@ -197,7 +197,6 @@
+ 
+ @property (readonly, copy, nonatomic) NSArray* childWineWindows;
+ 
+-    - (void) updateColorSpace;
+     - (void) updateForGLSubviews;
+ 
+     - (BOOL) becameEligibleParentOrChild;
+@@ -351,11 +350,6 @@
+             context.needsUpdate = TRUE;
+     }
+ 
+-    - (BOOL) hasGLContext
+-    {
+-        return [glContexts count] || [pendingGlContexts count];
+-    }
+-
+     - (BOOL) acceptsFirstMouse:(NSEvent*)theEvent
+     {
+         return YES;
+@@ -1361,9 +1355,6 @@
+                 if (needEnableScreenUpdates)
+                     NSEnableScreenUpdates();
+ 
+-                if (!equalSizes)
+-                    [self updateColorSpace];
+-
+                 if (!enteringFullScreen &&
+                     [[NSProcessInfo processInfo] systemUptime] - enteredFullScreenTime > 1.0)
+                     nonFullscreenFrame = frame;
+@@ -1746,40 +1737,8 @@
+         return [childWindows objectsAtIndexes:indexes];
+     }
+ 
+-    // We normally use the generic/calibrated RGB color space for the window,
+-    // rather than the device color space, to avoid expensive color conversion
+-    // which slows down drawing.  However, for windows displaying OpenGL, having
+-    // a different color space than the screen greatly reduces frame rates, often
+-    // limiting it to the display refresh rate.
+-    //
+-    // To avoid this, we switch back to the screen color space whenever the
+-    // window is covered by a view with an attached OpenGL context.
+-    - (void) updateColorSpace
+-    {
+-        NSRect contentRect = [[self contentView] frame];
+-        BOOL coveredByGLView = FALSE;
+-        for (WineContentView* view in [[self contentView] subviews])
+-        {
+-            if ([view hasGLContext])
+-            {
+-                NSRect frame = [view convertRect:[view bounds] toView:nil];
+-                if (NSContainsRect(frame, contentRect))
+-                {
+-                    coveredByGLView = TRUE;
+-                    break;
+-                }
+-            }
+-        }
+-
+-        if (coveredByGLView)
+-            [self setColorSpace:nil];
+-        else
+-            [self setColorSpace:[NSColorSpace genericRGBColorSpace]];
+-    }
+-
+     - (void) updateForGLSubviews
+     {
+-        [self updateColorSpace];
+         if (gl_surface_mode == GL_SURFACE_BEHIND)
+             [self checkTransparency];
+     }

@@ -1,0 +1,40 @@
+diff --git a/dlls/wined3d/directx.c b/dlls/wined3d/directx.c
+index ef81278..10bae04 100644
+--- a/dlls/wined3d/directx.c
++++ b/dlls/wined3d/directx.c
+@@ -1264,6 +1264,7 @@ static const struct gpu_description gpu_description_table[] =
+     {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX765M,    "NVIDIA GeForce GTX 765M",          DRIVER_NVIDIA_GEFORCE6,  2048},
+     {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX770M,    "NVIDIA GeForce GTX 770M",          DRIVER_NVIDIA_GEFORCE6,  3072},
+     {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX770,     "NVIDIA GeForce GTX 770",           DRIVER_NVIDIA_GEFORCE6,  2048},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX780TI,     "NVIDIA GeForce GTX 780 Ti",           DRIVER_NVIDIA_GEFORCE6,  3072},
+ 
+     /* AMD cards */
+     {HW_VENDOR_AMD,        CARD_AMD_RAGE_128PRO,           "ATI Rage Fury",                    DRIVER_AMD_RAGE_128PRO,  16  },
+@@ -1670,6 +1671,7 @@ static enum wined3d_pci_device select_card_nvidia_binary(const struct wined3d_gl
+         }
+         cards[] =
+         {
++            {"GTX 780 Ti",    CARD_NVIDIA_GEFORCE_GTX780TI},   /* Geforce 700 - highend */
+             {"GTX 770M",    CARD_NVIDIA_GEFORCE_GTX770M},   /* Geforce 700 - midend high mobile */
+             {"GTX 770",     CARD_NVIDIA_GEFORCE_GTX770},    /* Geforce 700 - highend */
+             {"GTX 765M",    CARD_NVIDIA_GEFORCE_GTX765M},   /* Geforce 700 - midend high mobile */
+@@ -2167,6 +2169,7 @@ static enum wined3d_pci_device select_card_nvidia_mesa(const struct wined3d_gl_i
+     cards[] =
+     {
+         /* Kepler */
++        {"NVF1",    CARD_NVIDIA_GEFORCE_GTX780TI},
+         {"NVE6",    CARD_NVIDIA_GEFORCE_GTX770M},
+         {"NVE4",    CARD_NVIDIA_GEFORCE_GTX680},
+         /* Fermi */
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index 0199ef8..a4246f3 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -1475,6 +1475,7 @@ enum wined3d_pci_device
+     CARD_NVIDIA_GEFORCE_GTX765M     = 0x11e2,
+     CARD_NVIDIA_GEFORCE_GTX770M     = 0x11e0,
+     CARD_NVIDIA_GEFORCE_GTX770      = 0x1184,
++    CARD_NVIDIA_GEFORCE_GTX780TI    = 0x100a,
+ 
+     CARD_VMWARE_SVGA3D              = 0x0405,
+ 

@@ -1,0 +1,113 @@
+commit 33fee47bc7a0879eb09bf167bad9a15a651ac8f4
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Tue Feb 16 23:04:44 2016 +0300
+
+    wined3d: implement conversion from WINED3DFMT_P8_UINT to WINED3DFMT_B5G6R5_UNORM
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index c1d7b18..7d20eaf 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -1952,7 +1952,7 @@ HRESULT wined3d_surface_update_desc(struct wined3d_surface *surface, const struc
+ }
+ 
+ static void convert_r32_float_r16_float(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned short *dst_s;
+     const float *src_f;
+@@ -1972,7 +1972,7 @@ static void convert_r32_float_r16_float(const BYTE *src, BYTE *dst,
+ }
+ 
+ static void convert_r5g6b5_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     static const unsigned char convert_5to8[] =
+     {
+@@ -2014,7 +2014,7 @@ static void convert_r5g6b5_x8r8g8b8(const BYTE *src, BYTE *dst,
+ /* We use this for both B8G8R8A8 -> B8G8R8X8 and B8G8R8X8 -> B8G8R8A8, since
+  * in both cases we're just setting the X / Alpha channel to 0xff. */
+ static void convert_a8r8g8b8_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned int x, y;
+ 
+@@ -2038,7 +2038,7 @@ static inline BYTE cliptobyte(int x)
+ }
+ 
+ static void convert_yuy2_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     int c2, d, e, r2 = 0, g2 = 0, b2 = 0;
+     unsigned int x, y;
+@@ -2080,7 +2080,7 @@ static void convert_yuy2_x8r8g8b8(const BYTE *src, BYTE *dst,
+ }
+ 
+ static void convert_yuy2_r5g6b5(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned int x, y;
+     int c2, d, e, r2 = 0, g2 = 0, b2 = 0;
+@@ -2120,10 +2120,37 @@ static void convert_yuy2_r5g6b5(const BYTE *src, BYTE *dst,
+     }
+ }
+ 
++static void convert_p8_r5g6b5(const BYTE *src, BYTE *dst,
++                              DWORD src_pitch, DWORD dst_pitch, unsigned int width, unsigned int height,
++                              const struct wined3d_palette *palette)
++{
++    unsigned int x, y;
++    const BYTE *src_row;
++    WORD *dst_row;
++    WORD grey = 0x0821;
++
++    for (y = 0; y < height; ++y)
++    {
++        src_row = &src[src_pitch * y];
++        dst_row = (WORD *)&dst[dst_pitch * y];
++        for (x = 0; x < width; ++x)
++        {
++            BYTE src_color = src_row[x];
++            if (palette) {
++                dst_row[x] =  (palette->colors[src_color].rgbRed << 11)
++                | (palette->colors[src_color].rgbGreen << 5)
++                |  palette->colors[src_color].rgbBlue;
++            } else {
++                dst_row[x] = grey * (src_color / 8);
++            }
++        }
++    }
++}
++
+ struct d3dfmt_converter_desc
+ {
+     enum wined3d_format_id from, to;
+-    void (*convert)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h);
++    void (*convert)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette);
+ };
+ 
+ static const struct d3dfmt_converter_desc converters[] =
+@@ -2134,6 +2161,7 @@ static const struct d3dfmt_converter_desc converters[] =
+     {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_B8G8R8A8_UNORM,  convert_a8r8g8b8_x8r8g8b8},
+     {WINED3DFMT_YUY2,           WINED3DFMT_B8G8R8X8_UNORM,  convert_yuy2_x8r8g8b8},
+     {WINED3DFMT_YUY2,           WINED3DFMT_B5G6R5_UNORM,    convert_yuy2_r5g6b5},
++    {WINED3DFMT_P8_UINT,        WINED3DFMT_B5G6R5_UNORM,    convert_p8_r5g6b5},
+ };
+ 
+ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_format_id from,
+@@ -2199,7 +2227,7 @@ static struct wined3d_texture *surface_convert_format(struct wined3d_surface *so
+     }
+ 
+     conv->convert(src_map.data, dst_map.data, src_map.row_pitch, dst_map.row_pitch,
+-            source->resource.width, source->resource.height);
++            source->resource.width, source->resource.height, source->container->swapchain->palette);
+ 
+     wined3d_surface_unmap(dst);
+     wined3d_surface_unmap(source);

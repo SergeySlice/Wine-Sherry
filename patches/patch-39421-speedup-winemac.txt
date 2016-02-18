@@ -1,0 +1,16 @@
+diff --git a/dlls/winemac.drv/opengl.c b/dlls/winemac.drv/opengl.c
+index a6f1440..c1a1277 100644
+--- a/dlls/winemac.drv/opengl.c
++++ b/dlls/winemac.drv/opengl.c
+@@ -1834,6 +1834,11 @@ static void macdrv_glFinish(void)
+ static void macdrv_glFlush(void)
+ {
+     struct wgl_context *context = NtCurrentTeb()->glContext;
++    DWORD now = GetTickCount();
++
++    if (now - context->last_flush_time < 17)
++      return;
++     context->last_flush_time = now;
+ 
+     sync_swap_interval(context);
+ 

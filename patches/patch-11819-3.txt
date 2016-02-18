@@ -1,0 +1,110 @@
+From 3913457169ab0014e0cb14013454fb330ed8171e Mon Sep 17 00:00:00 2001
+From: Christian Costa <titan.costa@gmail.com>
+Date: Sun, 28 Dec 2014 19:45:20 +0100
+Subject: wined3d: Revert commit 439097c810bdcb2bd3f838d2ee47369d1f4d7e8a.
+
+---
+ dlls/wined3d/context.c | 32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index 4da8c7d..52c55a8 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -2235,7 +2235,7 @@ static DWORD context_generate_rt_mask_no_fbo(const struct wined3d_device *device
+ void context_apply_blit_state(struct wined3d_context *context, const struct wined3d_device *device)
+ {
+     struct wined3d_surface *rt = context->current_rt;
+-    DWORD rt_mask, *cur_mask;
++    DWORD rt_mask, old_mask;
+ 
+     if (wined3d_settings.offscreen_rendering_mode == ORM_FBO)
+     {
+@@ -2263,12 +2263,12 @@ void context_apply_blit_state(struct wined3d_context *context, const struct wine
+         rt_mask = context_generate_rt_mask_no_fbo(device, rt);
+     }
+ 
+-    cur_mask = context->current_fbo ? &context->current_fbo->rt_mask : &context->draw_buffers_mask;
++    old_mask = context->current_fbo ? context->current_fbo->rt_mask : context->draw_buffers_mask;
+ 
+-    if (rt_mask != *cur_mask)
++    if (rt_mask != old_mask)
+     {
+         context_apply_draw_buffers(context, rt_mask);
+-        *cur_mask = rt_mask;
++        context->draw_buffers_mask = rt_mask;
+     }
+ 
+     if (wined3d_settings.offscreen_rendering_mode == ORM_FBO)
+@@ -2303,7 +2303,7 @@ BOOL context_apply_clear_state(struct wined3d_context *context, const struct win
+ {
+     struct wined3d_rendertarget_view **rts = fb->render_targets;
+     const struct wined3d_gl_info *gl_info = context->gl_info;
+-    DWORD rt_mask = 0, *cur_mask;
++    DWORD rt_mask = 0, old_mask;
+     UINT i;
+ 
+     if (isStateDirty(context, STATE_FRAMEBUFFER) || fb != &device->fb
+@@ -2365,12 +2365,12 @@ BOOL context_apply_clear_state(struct wined3d_context *context, const struct win
+                 rt_count ? wined3d_rendertarget_view_get_surface(rts[0]) : NULL);
+     }
+ 
+-    cur_mask = context->current_fbo ? &context->current_fbo->rt_mask : &context->draw_buffers_mask;
++    old_mask = context->current_fbo ? context->current_fbo->rt_mask : context->draw_buffers_mask;
+ 
+-    if (rt_mask != *cur_mask)
++    if (rt_mask != old_mask)
+     {
+         context_apply_draw_buffers(context, rt_mask);
+-        *cur_mask = rt_mask;
++        context->draw_buffers_mask = rt_mask;
+         context_invalidate_state(context, STATE_FRAMEBUFFER);
+     }
+ 
+@@ -2431,7 +2431,7 @@ void context_state_fb(struct wined3d_context *context, const struct wined3d_stat
+     const struct wined3d_device *device = context->swapchain->device;
+     const struct wined3d_fb_state *fb = state->fb;
+     DWORD rt_mask = find_draw_buffers_mask(context, device);
+-    DWORD *cur_mask;
++    DWORD old_mask;
+ 
+     if (wined3d_settings.offscreen_rendering_mode == ORM_FBO)
+     {
+@@ -2453,11 +2453,11 @@ void context_state_fb(struct wined3d_context *context, const struct wined3d_stat
+         }
+     }
+ 
+-    cur_mask = context->current_fbo ? &context->current_fbo->rt_mask : &context->draw_buffers_mask;
+-    if (rt_mask != *cur_mask)
++    old_mask = context->current_fbo ? context->current_fbo->rt_mask : context->draw_buffers_mask;
++    if (rt_mask != old_mask)
+     {
+         context_apply_draw_buffers(context, rt_mask);
+-        *cur_mask = rt_mask;
++        context->draw_buffers_mask = rt_mask;
+     }
+ }
+ 
+@@ -2697,16 +2697,16 @@ static void context_update_tex_unit_map(struct wined3d_context *context, const s
+ void context_state_drawbuf(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
+ {
+     const struct wined3d_device *device = context->swapchain->device;
+-    DWORD rt_mask, *cur_mask;
++    DWORD rt_mask, old_mask;
+ 
+     if (isStateDirty(context, STATE_FRAMEBUFFER)) return;
+ 
+-    cur_mask = context->current_fbo ? &context->current_fbo->rt_mask : &context->draw_buffers_mask;
++    old_mask = context->current_fbo ? context->current_fbo->rt_mask : context->draw_buffers_mask;
+     rt_mask = find_draw_buffers_mask(context, device);
+-    if (rt_mask != *cur_mask)
++    if (rt_mask != old_mask)
+     {
+         context_apply_draw_buffers(context, rt_mask);
+-        *cur_mask = rt_mask;
++        context->draw_buffers_mask = rt_mask;
+     }
+ }
+ 
+-- 
+2.1.0

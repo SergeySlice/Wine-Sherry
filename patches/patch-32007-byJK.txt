@@ -1,0 +1,26 @@
+diff --git a/dlls/dxgi/adapter.c b/dlls/dxgi/adapter.c
+index 3e58fd2..2985487 100644
+--- a/dlls/dxgi/adapter.c
++++ b/dlls/dxgi/adapter.c
+@@ -131,6 +131,8 @@ static HRESULT STDMETHODCALLTYPE dxgi_adapter_EnumOutputs(IDXGIAdapter1 *iface,
+     *output = adapter->output;
+     IDXGIOutput_AddRef(*output);
+ 
++    IDXGIAdapter1_AddRef(iface);
++
+     TRACE("Returning output %p.\n", output);
+ 
+     return S_OK;
+diff --git a/dlls/dxgi/factory.c b/dlls/dxgi/factory.c
+index 5da45f3..c004536 100644
+--- a/dlls/dxgi/factory.c
++++ b/dlls/dxgi/factory.c
+@@ -148,6 +148,8 @@ static HRESULT STDMETHODCALLTYPE dxgi_factory_EnumAdapters1(IDXGIFactory1 *iface
+     *adapter = (IDXGIAdapter1 *)factory->adapters[adapter_idx];
+     IDXGIAdapter1_AddRef(*adapter);
+ 
++    IDXGIFactory1_AddRef(iface);
++
+     TRACE("Returning adapter %p.\n", *adapter);
+ 
+     return S_OK;

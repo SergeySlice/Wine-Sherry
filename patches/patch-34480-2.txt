@@ -1,0 +1,241 @@
+diff --git a/dlls/wined3d/buffer.c b/dlls/wined3d/buffer.c
+index c53021b..5b4ef8e 100644
+--- a/dlls/wined3d/buffer.c
++++ b/dlls/wined3d/buffer.c
+@@ -1147,7 +1147,7 @@ static HRESULT buffer_init(struct wined3d_buffer *buffer, struct wined3d_device
+ 
+     hr = resource_init(&buffer->resource, device, WINED3D_RTYPE_BUFFER, format,
+             WINED3D_MULTISAMPLE_NONE, 0, usage, pool, size, 1, 1, size,
+-            parent, parent_ops, &buffer_resource_ops);
++            parent, parent_ops, &buffer_resource_ops, 0);
+     if (FAILED(hr))
+     {
+         WARN("Failed to initialize resource, hr %#x\n", hr);
+diff --git a/dlls/wined3d/resource.c b/dlls/wined3d/resource.c
+index 177d23e..87157b2 100644
+--- a/dlls/wined3d/resource.c
++++ b/dlls/wined3d/resource.c
+@@ -82,7 +82,7 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+         enum wined3d_multisample_type multisample_type, UINT multisample_quality,
+         DWORD usage, enum wined3d_pool pool, UINT width, UINT height, UINT depth, UINT size,
+         void *parent, const struct wined3d_parent_ops *parent_ops,
+-        const struct wined3d_resource_ops *resource_ops)
++        const struct wined3d_resource_ops *resource_ops, void *have_alloc)
+ {
+     const struct wined3d *d3d = device->wined3d;
+ 
+@@ -113,6 +113,7 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+     resource->depth = depth;
+     resource->size = size;
+     resource->priority = 0;
++    resource->alloc_managed = have_alloc == NULL ? 0 : 1;
+     resource->parent = parent;
+     resource->parent_ops = parent_ops;
+     resource->resource_ops = resource_ops;
+@@ -120,7 +121,9 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+ 
+     if (size)
+     {
+-        if (!wined3d_resource_allocate_sysmem(resource))
++        if (have_alloc) {
++            resource->heap_memory = have_alloc;
++        } else if (!wined3d_resource_allocate_sysmem(resource))
+         {
+             ERR("Failed to allocate system memory.\n");
+             return E_OUTOFMEMORY;
+@@ -171,7 +174,8 @@ void resource_cleanup(struct wined3d_resource *resource)
+             ERR("Failed to free private data when destroying resource %p, hr = %#x.\n", resource, hr);
+     }
+ 
+-    wined3d_resource_free_sysmem(resource);
++    if (!resource->alloc_managed)
++        wined3d_resource_free_sysmem(resource);
+ 
+     device_resource_released(resource->device, resource);
+ }
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index 628a4a5..3ab9878 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -6307,7 +6307,7 @@ cpu:
+ }
+ 
+ static HRESULT surface_init(struct wined3d_surface *surface, struct wined3d_texture *container,
+-        const struct wined3d_resource_desc *desc, DWORD flags)
++        const struct wined3d_resource_desc *desc, DWORD flags, void *have_alloc)
+ {
+     struct wined3d_device *device = container->resource.device;
+     const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
+@@ -6365,7 +6365,7 @@ static HRESULT surface_init(struct wined3d_surface *surface, struct wined3d_text
+ 
+     if (FAILED(hr = resource_init(&surface->resource, device, WINED3D_RTYPE_SURFACE, format,
+             desc->multisample_type, multisample_quality, desc->usage, desc->pool, desc->width, desc->height, 1,
+-            resource_size, NULL, &wined3d_null_parent_ops, &surface_resource_ops)))
++            resource_size, NULL, &wined3d_null_parent_ops, &surface_resource_ops, have_alloc)))
+     {
+         WARN("Failed to initialize resource, returning %#x.\n", hr);
+         return hr;
+@@ -6415,7 +6415,7 @@ static HRESULT surface_init(struct wined3d_surface *surface, struct wined3d_text
+ }
+ 
+ HRESULT CDECL wined3d_surface_create(struct wined3d_texture *container,
+-        const struct wined3d_resource_desc *desc, DWORD flags, struct wined3d_surface **surface)
++        const struct wined3d_resource_desc *desc, DWORD flags, struct wined3d_surface **surface, void *have_alloc)
+ {
+     struct wined3d_device_parent *device_parent = container->resource.device->device_parent;
+     const struct wined3d_parent_ops *parent_ops;
+@@ -6432,7 +6432,7 @@ HRESULT CDECL wined3d_surface_create(struct wined3d_texture *container,
+     if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object))))
+         return E_OUTOFMEMORY;
+ 
+-    if (FAILED(hr = surface_init(object, container, desc, flags)))
++    if (FAILED(hr = surface_init(object, container, desc, flags, have_alloc)))
+     {
+         WARN("Failed to initialize surface, returning %#x.\n", hr);
+         HeapFree(GetProcessHeap(), 0, object);
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index 897af19..e94179c 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -51,7 +51,7 @@ static HRESULT wined3d_texture_init(struct wined3d_texture *texture, const struc
+ 
+     if (FAILED(hr = resource_init(&texture->resource, device, desc->resource_type, format,
+             desc->multisample_type, desc->multisample_quality, desc->usage, desc->pool,
+-            desc->width, desc->height, desc->depth, 0, parent, parent_ops, resource_ops)))
++            desc->width, desc->height, desc->depth, 0, parent, parent_ops, resource_ops, 0)))
+     {
+         WARN("Failed to initialize resource, returning %#x\n", hr);
+         return hr;
+@@ -128,8 +128,11 @@ static void wined3d_texture_cleanup(struct wined3d_texture *texture)
+     {
+         struct wined3d_resource *sub_resource = texture->sub_resources[i];
+ 
+-        if (sub_resource)
++        if (sub_resource) {
++            if (sub_resource->alloc_managed && i == 0)
++                sub_resource->alloc_managed = 0;
+             texture->texture_ops->texture_sub_resource_cleanup(sub_resource);
++        }
+     }
+ 
+     wined3d_texture_unload_gl_texture(texture);
+@@ -879,7 +882,7 @@ static HRESULT cubetexture_init(struct wined3d_texture *texture, const struct wi
+             UINT idx = j * texture->level_count + i;
+             struct wined3d_surface *surface;
+ 
+-            if (FAILED(hr = wined3d_surface_create(texture, &surface_desc, surface_flags, &surface)))
++            if (FAILED(hr = wined3d_surface_create(texture, &surface_desc, surface_flags, &surface, 0)))
+             {
+                 WARN("Failed to create surface, hr %#x.\n", hr);
+                 wined3d_texture_cleanup(texture);
+@@ -897,6 +900,21 @@ static HRESULT cubetexture_init(struct wined3d_texture *texture, const struct wi
+     return WINED3D_OK;
+ }
+ 
++void* wined3d_resource_allocate_sysmem_from_size(SIZE_T size)
++{
++    void **p;
++    SIZE_T align = RESOURCE_ALIGNMENT - 1 + sizeof(*p);
++    void *mem;
++
++    if (!(mem = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + align)))
++        return FALSE;
++
++    p = (void **)(((ULONG_PTR)mem + align) & ~(RESOURCE_ALIGNMENT - 1)) - 1;
++    *p = mem;
++
++    return ++p;
++}
++
+ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3d_resource_desc *desc,
+         UINT levels, DWORD surface_flags, struct wined3d_device *device, void *parent,
+         const struct wined3d_parent_ops *parent_ops)
+@@ -1029,25 +1047,42 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
+     /* Generate all the surfaces. */
+     surface_desc = *desc;
+     surface_desc.resource_type = WINED3D_RTYPE_SURFACE;
++    SIZE_T resource_size = 0;
++    // compute the needed space for all mipmaps
++    UINT pw = surface_desc.width;
++    UINT ph = surface_desc.height;
++    const struct wined3d_format *format = wined3d_get_format(gl_info, desc->format);
++
++    for (i = 0; i < texture->level_count; ++i)
++    {
++        resource_size += wined3d_format_calculate_size(format, device->surface_alignment, pw, ph, 1);
++        // next mipmap
++        pw = max(1, pw >> 1);
++        ph = max(1, ph >> 1);
++    }
++    // alloc
++    void *base_surface_alloc = wined3d_resource_allocate_sysmem_from_size(resource_size);
++    void *last_alloc = base_surface_alloc;
+     for (i = 0; i < texture->level_count; ++i)
+     {
+         struct wined3d_surface *surface;
+ 
+-        if (FAILED(hr = wined3d_surface_create(texture, &surface_desc, surface_flags, &surface)))
++        if (FAILED(hr = wined3d_surface_create(texture, &surface_desc, surface_flags, &surface, last_alloc)))
+         {
+             WARN("Failed to create surface, hr %#x.\n", hr);
+             wined3d_texture_cleanup(texture);
+             return hr;
+         }
++        last_alloc += wined3d_format_calculate_size(format, device->surface_alignment, surface_desc.width, surface_desc.height, 1);
+ 
+         surface_set_texture_target(surface, texture->target, i);
+         texture->sub_resources[i] = &surface->resource;
++
+         TRACE("Created surface level %u @ %p.\n", i, surface);
+         /* Calculate the next mipmap level. */
+         surface_desc.width = max(1, surface_desc.width >> 1);
+         surface_desc.height = max(1, surface_desc.height >> 1);
+     }
+-
+     return WINED3D_OK;
+ }
+ 
+diff --git a/dlls/wined3d/volume.c b/dlls/wined3d/volume.c
+index 817fe7e..335c65e 100644
+--- a/dlls/wined3d/volume.c
++++ b/dlls/wined3d/volume.c
+@@ -839,7 +839,7 @@ static HRESULT volume_init(struct wined3d_volume *volume, struct wined3d_texture
+ 
+     if (FAILED(hr = resource_init(&volume->resource, device, WINED3D_RTYPE_VOLUME, format,
+             WINED3D_MULTISAMPLE_NONE, 0, desc->usage, desc->pool, desc->width, desc->height, desc->depth,
+-            size, NULL, &wined3d_null_parent_ops, &volume_resource_ops)))
++            size, NULL, &wined3d_null_parent_ops, &volume_resource_ops, 0)))
+     {
+         WARN("Failed to initialize resource, returning %#x.\n", hr);
+         return hr;
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index 991db87..b873d48 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -2002,6 +2002,7 @@ struct wined3d_resource
+     void *heap_memory;
+     struct list privateData;
+     struct list resource_list_entry;
++    DWORD alloc_managed;
+ 
+     void *parent;
+     const struct wined3d_parent_ops *parent_ops;
+@@ -2015,7 +2016,7 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+         enum wined3d_multisample_type multisample_type, UINT multisample_quality,
+         DWORD usage, enum wined3d_pool pool, UINT width, UINT height, UINT depth, UINT size,
+         void *parent, const struct wined3d_parent_ops *parent_ops,
+-        const struct wined3d_resource_ops *resource_ops) DECLSPEC_HIDDEN;
++        const struct wined3d_resource_ops *resource_ops, void *have_alloc) DECLSPEC_HIDDEN;
+ DWORD resource_set_priority(struct wined3d_resource *resource, DWORD priority) DECLSPEC_HIDDEN;
+ void resource_unload(struct wined3d_resource *resource) DECLSPEC_HIDDEN;
+ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource) DECLSPEC_HIDDEN;
+@@ -2275,7 +2276,7 @@ HRESULT surface_upload_from_surface(struct wined3d_surface *dst_surface, const P
+         struct wined3d_surface *src_surface, const RECT *src_rect) DECLSPEC_HIDDEN;
+ void surface_validate_location(struct wined3d_surface *surface, DWORD location) DECLSPEC_HIDDEN;
+ HRESULT CDECL wined3d_surface_create(struct wined3d_texture *container,
+-        const struct wined3d_resource_desc *desc, DWORD flags, struct wined3d_surface **surface) DECLSPEC_HIDDEN;
++        const struct wined3d_resource_desc *desc, DWORD flags, struct wined3d_surface **surface, void *last_alloc) DECLSPEC_HIDDEN;
+ void surface_prepare_map_memory(struct wined3d_surface *surface) DECLSPEC_HIDDEN;
+ 
+ void get_drawable_size_swapchain(const struct wined3d_context *context, UINT *width, UINT *height) DECLSPEC_HIDDEN;
+

@@ -1,0 +1,119 @@
+commit b6710c2a006234ac1a729881e7ca75d34cffb474
+Author: Austin English <austinenglish@gmail.com>
+Date:   Mon Nov 9 00:45:29 2015 -0600
+
+    bthprops.cpl: Add stub dll.
+    
+    Signed-off-by: Austin English <austinenglish@gmail.com>
+    Signed-off-by: Alexandre Julliard <julliard@winehq.org>
+
+diff --git a/configure b/configure
+index e1f69e0..35705f5 100755
+--- a/configure
++++ b/configure
+@@ -964,6 +964,7 @@ enable_avifil32
+ enable_avrt
+ enable_bcrypt
+ enable_browseui
++enable_bthprops_cpl
+ enable_cabinet
+ enable_capi2032
+ enable_cards
+@@ -17465,6 +17466,7 @@ wine_fn_config_dll bcrypt enable_bcrypt
+ wine_fn_config_test dlls/bcrypt/tests bcrypt_test
+ wine_fn_config_dll browseui enable_browseui clean,po
+ wine_fn_config_test dlls/browseui/tests browseui_test
++wine_fn_config_dll bthprops.cpl enable_bthprops_cpl
+ wine_fn_config_dll cabinet enable_cabinet implib
+ wine_fn_config_test dlls/cabinet/tests cabinet_test
+ wine_fn_config_dll capi2032 enable_capi2032 implib
+diff --git a/configure.ac b/configure.ac
+index b9f90c7..c6a8b3e 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -2822,6 +2822,7 @@ WINE_CONFIG_DLL(bcrypt)
+ WINE_CONFIG_TEST(dlls/bcrypt/tests)
+ WINE_CONFIG_DLL(browseui,,[clean,po])
+ WINE_CONFIG_TEST(dlls/browseui/tests)
++WINE_CONFIG_DLL(bthprops.cpl)
+ WINE_CONFIG_DLL(cabinet,,[implib])
+ WINE_CONFIG_TEST(dlls/cabinet/tests)
+ WINE_CONFIG_DLL(capi2032,,[implib])
+diff --git a/dlls/bthprops.cpl/Makefile.in b/dlls/bthprops.cpl/Makefile.in
+new file mode 100644
+index 0000000..402ec46
+--- /dev/null
++++ b/dlls/bthprops.cpl/Makefile.in
+@@ -0,0 +1 @@
++MODULE    = bthprops.cpl
+diff --git a/dlls/bthprops.cpl/bthprops.cpl.spec b/dlls/bthprops.cpl/bthprops.cpl.spec
+new file mode 100644
+index 0000000..bb7a6ff
+--- /dev/null
++++ b/dlls/bthprops.cpl/bthprops.cpl.spec
+@@ -0,0 +1,65 @@
++@ stub BluetoothAddressToString
++@ stub BluetoothAuthenticateDevice
++@ stub BluetoothAuthenticateDeviceEx
++@ stub BluetoothAuthenticateMultipleDevices
++@ stub BluetoothAuthenticationAgent
++@ stub BluetoothDisconnectDevice
++@ stub BluetoothDisplayDeviceProperties
++@ stub BluetoothEnableDiscovery
++@ stub BluetoothEnableIncomingConnections
++@ stub BluetoothEnumerateInstalledServices
++@ stub BluetoothEnumerateInstalledServicesEx
++@ stub BluetoothFindBrowseGroupClose
++@ stub BluetoothFindClassIdClose
++@ stub BluetoothFindDeviceClose
++@ stub BluetoothFindFirstBrowseGroup
++@ stub BluetoothFindFirstClassId
++@ stub BluetoothFindFirstDevice
++@ stub BluetoothFindFirstProfileDescriptor
++@ stub BluetoothFindFirstProtocolDescriptorStack
++@ stub BluetoothFindFirstProtocolEntry
++@ stub BluetoothFindFirstRadio
++@ stub BluetoothFindFirstService
++@ stub BluetoothFindFirstServiceEx
++@ stub BluetoothFindNextBrowseGroup
++@ stub BluetoothFindNextClassId
++@ stub BluetoothFindNextDevice
++@ stub BluetoothFindNextProfileDescriptor
++@ stub BluetoothFindNextProtocolDescriptorStack
++@ stub BluetoothFindNextProtocolEntry
++@ stub BluetoothFindNextRadio
++@ stub BluetoothFindNextService
++@ stub BluetoothFindProfileDescriptorClose
++@ stub BluetoothFindProtocolDescriptorStackClose
++@ stub BluetoothFindProtocolEntryClose
++@ stub BluetoothFindRadioClose
++@ stub BluetoothFindServiceClose
++@ stub BluetoothGetDeviceInfo
++@ stub BluetoothGetRadioInfo
++@ stub BluetoothIsConnectable
++@ stub BluetoothIsDiscoverable
++@ stub BluetoothIsVersionAvailable
++@ stub BluetoothMapClassOfDeviceToImageIndex
++@ stub BluetoothMapClassOfDeviceToString
++@ stub BluetoothRegisterForAuthentication
++@ stub BluetoothRegisterForAuthenticationEx
++@ stub BluetoothRemoveDevice
++@ stub BluetoothSdpEnumAttributes
++@ stub BluetoothSdpGetAttributeValue
++@ stub BluetoothSdpGetContainerElementData
++@ stub BluetoothSdpGetElementData
++@ stub BluetoothSdpGetString
++@ stub BluetoothSelectDevices
++@ stub BluetoothSelectDevicesFree
++@ stub BluetoothSendAuthenticationResponse
++@ stub BluetoothSendAuthenticationResponseEx
++@ stub BluetoothSetLocalServiceInfo
++@ stub BluetoothSetServiceState
++@ stub BluetoothUnregisterAuthentication
++@ stub BluetoothUpdateDeviceRecord
++@ stub BthpEnableAllServices
++@ stub BthpFindPnpInfo
++@ stub BthpMapStatusToErr
++@ stub CPlApplet
++@ stub DllCanUnloadNow
++@ stub DllGetClassObject

@@ -1,0 +1,176 @@
+Fixes Carmageddon 2 demo launcher by Andrew D'Addesio
+---
+ dlls/ddraw/ddraw.c     | 29 +++++++++++++++++++++++----
+ dlls/ddraw/tests/d3d.c | 53 ++++++++++++++++++++++++++++++++++++++++++++++----
+ include/d3dcaps.h      |  2 ++
+ 3 files changed, 76 insertions(+), 8 deletions(-)
+
+diff --git a/dlls/ddraw/ddraw.c b/dlls/ddraw/ddraw.c
+index c94bfee..7b5b593 100644
+--- a/dlls/ddraw/ddraw.c
++++ b/dlls/ddraw/ddraw.c
+@@ -30,6 +30,13 @@ WINE_DEFAULT_DEBUG_CHANNEL(ddraw);
+ 
+ static const struct ddraw *exclusive_ddraw;
+ 
++/* Size of D3DDEVICEDESC in Direct3D 1-3 */
++enum {
++    D3D1_DESC_SIZE = FIELD_OFFSET(D3DDEVICEDESC, dwMinTextureWidth), /* 172 */
++    D3D2_DESC_SIZE = FIELD_OFFSET(D3DDEVICEDESC, dwMaxTextureRepeat), /* 204 */
++    D3D3_DESC_SIZE = sizeof(D3DDEVICEDESC) /* 252 */
++};
++
+ /* Device identifier. Don't relay it to WineD3D */
+ static const DDDEVICEIDENTIFIER2 deviceidentifier =
+ {
+@@ -3969,6 +3976,9 @@ static HRESULT WINAPI d3d1_CreateViewport(IDirect3D *iface, IDirect3DViewport **
+ static HRESULT WINAPI d3d3_FindDevice(IDirect3D3 *iface, D3DFINDDEVICESEARCH *fds, D3DFINDDEVICERESULT *fdr)
+ {
+     struct ddraw *ddraw = impl_from_IDirect3D3(iface);
++    const DWORD hwdesc_offset = FIELD_OFFSET(D3DFINDDEVICERESULT, ddHwDesc);
++    DWORD desc_size;
++    BYTE *desc_ptr;
+     D3DDEVICEDESC7 desc7;
+     D3DDEVICEDESC desc1;
+     HRESULT hr;
+@@ -3977,10 +3987,13 @@ static HRESULT WINAPI d3d3_FindDevice(IDirect3D3 *iface, D3DFINDDEVICESEARCH *fd
+ 
+     if (!fds || !fdr) return DDERR_INVALIDPARAMS;
+ 
+-    if (fds->dwSize != sizeof(D3DFINDDEVICESEARCH)
+-            || fdr->dwSize != sizeof(D3DFINDDEVICERESULT))
++    if (fdr->dwSize != hwdesc_offset + 2*D3D1_DESC_SIZE
++        && fdr->dwSize != hwdesc_offset + 2*D3D2_DESC_SIZE
++        && fdr->dwSize != hwdesc_offset + 2*D3D3_DESC_SIZE)
+         return DDERR_INVALIDPARAMS;
+ 
++    desc_size = (fdr->dwSize - hwdesc_offset)/2;
++
+     if ((fds->dwFlags & D3DFDS_COLORMODEL)
+             && fds->dcmColorModel != D3DCOLOR_RGB)
+     {
+@@ -4007,8 +4020,16 @@ static HRESULT WINAPI d3d3_FindDevice(IDirect3D3 *iface, D3DFINDDEVICESEARCH *fd
+     /* Now return our own GUID */
+     ddraw_d3dcaps1_from_7(&desc1, &desc7);
+     fdr->guid = IID_D3DDEVICE_WineD3D;
+-    fdr->ddHwDesc = desc1;
+-    fdr->ddSwDesc = desc1;
++
++    /* Write ddHwDesc */
++    desc_ptr = (BYTE*)&fdr->ddHwDesc;
++    memcpy(desc_ptr, &desc1, desc_size);
++    ((D3DDEVICEDESC*)desc_ptr)->dwSize = desc_size;
++
++    /* Write ddSwDesc */
++    desc_ptr += desc_size;
++    memcpy(desc_ptr, &desc1, desc_size);
++    ((D3DDEVICEDESC*)desc_ptr)->dwSize = desc_size;
+ 
+     TRACE("Returning Wine's wined3d device with (undumped) capabilities.\n");
+ 
+diff --git a/dlls/ddraw/tests/d3d.c b/dlls/ddraw/tests/d3d.c
+index df6b3cf..392c13f 100644
+--- a/dlls/ddraw/tests/d3d.c
++++ b/dlls/ddraw/tests/d3d.c
+@@ -63,6 +63,13 @@ struct d3d2_test_context
+     IDirect3DViewport2 *viewport;
+ };
+ 
++/* Size of D3DDEVICEDESC in Direct3D 1-3 */
++enum {
++    D3D1_DESC_SIZE = FIELD_OFFSET(D3DDEVICEDESC, dwMinTextureWidth), /* 172 */
++    D3D2_DESC_SIZE = FIELD_OFFSET(D3DDEVICEDESC, dwMaxTextureRepeat), /* 204 */
++    D3D3_DESC_SIZE = sizeof(D3DDEVICEDESC) /* 252 */
++};
++
+ typedef struct {
+     int total;
+     int rgb;
+@@ -3223,8 +3230,27 @@ static void VertexBufferLockRest(void)
+     IDirect3DVertexBuffer7_Release(buffer);
+ }
+ 
++static void clear_device_result(D3DFINDDEVICERESULT *result, DWORD hwsize, DWORD swsize)
++{
++    BYTE *desc_ptr;
++
++    memset(result, 0, sizeof(*result));
++
++    result->dwSize = FIELD_OFFSET(D3DFINDDEVICERESULT, ddHwDesc) + hwsize + swsize;
++
++    /* Write ddHwDesc.dwSize */
++    desc_ptr = (BYTE*)&result->ddHwDesc;
++    ((D3DDEVICEDESC*)desc_ptr)->dwSize = hwsize;
++
++    /* Write ddSwDesc.dwSize */
++    desc_ptr += hwsize;
++    ((D3DDEVICEDESC*)desc_ptr)->dwSize = swsize;
++}
++
+ static void FindDevice(void)
+ {
++    static const DWORD desc_sizes[] = {D3D1_DESC_SIZE, D3D2_DESC_SIZE, D3D3_DESC_SIZE};
++
+     static const struct
+     {
+         const GUID *guid;
+@@ -3273,14 +3299,33 @@ static void FindDevice(void)
+     ok(hr == DDERR_INVALIDPARAMS,
+        "Expected IDirect3D1::FindDevice to return DDERR_INVALIDPARAMS, got 0x%08x\n", hr);
+ 
+-    /* Specifying no flags is permitted. */
++    /* FindDevice should succeed for the 3 versions of D3DDEVICEDESC (D3D 1-3) */
++    for (i = 0; i < sizeof(desc_sizes)/sizeof(desc_sizes[0]); i++)
++    {
++        /* Specifying no flags is permitted. */
++        search.dwSize = sizeof(search);
++        search.dwFlags = 0;
++        clear_device_result(&result, desc_sizes[i], desc_sizes[i]);
++        hr = IDirect3D_FindDevice(Direct3D1, &search, &result);
++        ok(hr == D3D_OK,
++            "Expected IDirect3D1::FindDevice to return D3D_OK, got 0x%08x\n", hr);
++    }
++
++    /* Non-matching D3DDEVICEDESC sizes should fail */
+     search.dwSize = sizeof(search);
+     search.dwFlags = 0;
+-    result.dwSize = sizeof(result);
++    clear_device_result(&result, D3D1_DESC_SIZE, D3D2_DESC_SIZE);
++    hr = IDirect3D_FindDevice(Direct3D1, &search, &result);
++    ok(hr == DDERR_INVALIDPARAMS,
++       "Expected IDirect3D1::FindDevice to return DDERR_INVALIDPARAMS, got 0x%08x\n", hr);
+ 
++    /* Invalid D3DDEVICEDESC sizes should fail */
++    search.dwSize = sizeof(search);
++    search.dwFlags = 0;
++    clear_device_result(&result, (D3D1_DESC_SIZE-4), (D3D1_DESC_SIZE-4));
+     hr = IDirect3D_FindDevice(Direct3D1, &search, &result);
+-    ok(hr == D3D_OK,
+-       "Expected IDirect3D1::FindDevice to return D3D_OK, got 0x%08x\n", hr);
++    ok(hr == DDERR_INVALIDPARAMS,
++       "Expected IDirect3D1::FindDevice to return DDERR_INVALIDPARAMS, got 0x%08x\n", hr);
+ 
+     /* Try an arbitrary non-device GUID. */
+     search.dwSize = sizeof(search);
+diff --git a/include/d3dcaps.h b/include/d3dcaps.h
+index 4fc76ba..392e15c 100644
+--- a/include/d3dcaps.h
++++ b/include/d3dcaps.h
+@@ -209,11 +209,13 @@ typedef struct _D3DDeviceDesc {
+         DWORD           dwMaxBufferSize;
+         DWORD           dwMaxVertexCount;
+ 
++        /* added in D3D2 */
+         DWORD           dwMinTextureWidth,dwMinTextureHeight;
+         DWORD           dwMaxTextureWidth,dwMaxTextureHeight;
+         DWORD           dwMinStippleWidth,dwMaxStippleWidth;
+         DWORD           dwMinStippleHeight,dwMaxStippleHeight;
+ 
++        /* added in D3D3 */
+         DWORD       dwMaxTextureRepeat;
+         DWORD       dwMaxTextureAspectRatio;
+         DWORD       dwMaxAnisotropy;
+-- 
+2.4.3
+
+

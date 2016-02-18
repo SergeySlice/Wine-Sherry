@@ -1,0 +1,158 @@
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index c3d469d..2fbbe49 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -428,6 +428,58 @@ static HRESULT wined3d_event_query_ops_get_data(struct wined3d_query *query,
+     return S_OK;
+ }
+ 
++static HRESULT wined3d_stats_query_ops_get_data(struct wined3d_query *query,
++                                                void *data, DWORD size, DWORD flags)
++{
++    if (!data || !size) return S_OK;
++    FIXME("SO_STATS %p %p %u %x\n", query, data, size, flags);
++    ((WINED3D_QUERY_DATA_SO_STATISTICS *)data)->NumPrimitivesWritten = 1;
++    ((WINED3D_QUERY_DATA_SO_STATISTICS *)data)->PrimitivesStorageNeeded = 0;
++    return S_OK;
++}
++
++static UINT wined3d_stats_query_ops_get_data_size(struct wined3d_query *query)
++{
++    FIXME("SO_STATS %p \n", query);
++    return sizeof(UINT64) * 2;
++}
++
++
++static void wined3d_stats_query_ops_begin(struct wined3d_query *query)
++{
++    FIXME("SO_STATS %p \n", query);
++}
++
++static void wined3d_stats_query_ops_end(struct wined3d_query *query)
++{
++    FIXME("SO_STATS %p\n", query);
++}
++
++static HRESULT wined3d_over_query_ops_get_data(struct wined3d_query *query,
++                                                void *data, DWORD size, DWORD flags)
++{
++    if (!data || !size) return S_OK;
++    FIXME("SO_STATS %p %p %u %x\n", query, data, size, flags);
++    *(BOOL*)data = FALSE;
++    return S_OK;
++}
++
++static UINT wined3d_over_query_ops_get_data_size(struct wined3d_query *query)
++{
++    FIXME("SO_STATS %p \n", query);
++    return 1;
++}
++
++static void wined3d_over_query_ops_begin(struct wined3d_query *query)
++{
++    FIXME("SO_OVERFLOW %p \n", query);
++}
++
++static void wined3d_over_query_ops_end(struct wined3d_query *query)
++{
++    FIXME("SO_OVERFLOW %p\n", query);
++}
++
+ void * CDECL wined3d_query_get_parent(const struct wined3d_query *query)
+ {
+     TRACE("query %p.\n", query);
+@@ -694,6 +746,22 @@ static const struct wined3d_query_ops event_query_ops =
+     wined3d_event_query_ops_issue,
+ };
+ 
++static const struct wined3d_query_iso_ops stats_query_ops =
++{
++    wined3d_stats_query_ops_begin,
++    wined3d_stats_query_ops_end,
++    wined3d_stats_query_ops_get_data,
++    wined3d_stats_query_ops_get_data_size,
++};
++
++static const struct wined3d_query_iso_ops over_query_ops =
++{
++    wined3d_over_query_ops_begin,
++    wined3d_over_query_ops_end,
++    wined3d_over_query_ops_get_data,
++    wined3d_over_query_ops_get_data_size,
++};
++
+ static const struct wined3d_query_ops occlusion_query_ops =
+ {
+     wined3d_occlusion_query_ops_get_data,
+@@ -758,6 +826,33 @@ static HRESULT query_init(struct wined3d_query *query, struct wined3d_device *de
+                 return E_OUTOFMEMORY;
+             }
+             break;
++        case WINED3D_QUERY_TYPE_SO_STATISTICS:
++            FIXME("Statistics query.\n");
++            if (!wined3d_event_query_supported(gl_info))
++            {
++                /* 3DMarkVantage needs this query.  */
++                FIXME("Statistics query: Unimplemented, but pretending to be supported.\n");
++            }
++            query->query_ops = (const struct wined3d_query_ops*)&stats_query_ops;
++            query->data_size = sizeof(UINT64) * 2;
++            query->extendedData = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct wined3d_stat_query));
++            if (!query->extendedData)
++            {
++                ERR("Failed to allocate event query memory.\n");
++                return E_OUTOFMEMORY;
++            }
++            break;
++        case WINED3D_QUERY_TYPE_SO_OVERFLOW:
++            FIXME("QUERY_TYPE_SO_OVERFLOW stub!\n");
++            query->query_ops = (const struct wined3d_query_ops*)&over_query_ops;
++            query->data_size = sizeof(BOOL);
++            query->extendedData = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct wined3d_stat_query));
++            if (!query->extendedData)
++            {
++                ERR("Failed to allocate event query memory.\n");
++                return E_OUTOFMEMORY;
++            }
++            break;
+ 
+         case WINED3D_QUERY_TYPE_TIMESTAMP:
+             TRACE("Timestamp query.\n");
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index 86ef47b..faed384 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -1160,6 +1160,13 @@ enum wined3d_event_query_result wined3d_event_query_finish(const struct wined3d_
+ void wined3d_event_query_issue(struct wined3d_event_query *query, const struct wined3d_device *device) DECLSPEC_HIDDEN;
+ BOOL wined3d_event_query_supported(const struct wined3d_gl_info *gl_info) DECLSPEC_HIDDEN;
+ 
++struct wined3d_stat_query
++{
++    struct list entry;
++    GLuint id;
++    struct wined3d_context *context;
++};
++
+ struct wined3d_timestamp_query
+ {
+     struct list entry;
+@@ -2728,6 +2735,19 @@ struct wined3d_query_ops
+     HRESULT (*query_issue)(struct wined3d_query *query, DWORD flags);
+ };
+ 
++typedef struct WINED3D_QUERY_DATA_SO_STATISTICS {
++    UINT64 NumPrimitivesWritten;
++    UINT64 PrimitivesStorageNeeded;
++} WINED3D_QUERY_DATA_SO_STATISTICS;
++
++struct wined3d_query_iso_ops
++{
++    VOID (*query_begin)(struct wined3d_query *query);
++    VOID (*query_end)(struct wined3d_query *query);
++    HRESULT (*query_get_data)(struct wined3d_query *query, void *data, DWORD data_size, DWORD flags);
++    UINT (*query_get_data_size)(struct wined3d_query *query);
++};
++
+ struct wined3d_query
+ {
+     LONG ref;

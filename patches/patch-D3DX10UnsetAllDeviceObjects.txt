@@ -1,0 +1,27 @@
+diff --git a/dlls/d3dx10_43/d3dx10_43.spec b/dlls/d3dx10_43/d3dx10_43.spec
+index 9edcf54..0673f6a 100644
+--- a/dlls/d3dx10_43/d3dx10_43.spec
++++ b/dlls/d3dx10_43/d3dx10_43.spec
+@@ -64,7 +64,7 @@
+ @ stub D3DX10SaveTextureToFileA(ptr ptr str)
+ @ stub D3DX10SaveTextureToFileW(ptr ptr wstr)
+ @ stub D3DX10SaveTextureToMemory(ptr ptr ptr long)
+-@ stub D3DX10UnsetAllDeviceObjects(ptr)
++@ stdcall D3DX10UnsetAllDeviceObjects(ptr)
+ @ stdcall D3DXBoxBoundProbe(ptr ptr ptr ptr) d3dx9_36.D3DXBoxBoundProbe
+ @ stdcall D3DXColorAdjustContrast(ptr ptr float) d3dx9_36.D3DXColorAdjustContrast
+ @ stdcall D3DXColorAdjustSaturation(ptr ptr float) d3dx9_36.D3DXColorAdjustSaturation
+diff --git a/dlls/d3dx10_43/d3dx10_43_main.c b/dlls/d3dx10_43/d3dx10_43_main.c
+index 6637af3..c9fd59e 100644
+--- a/dlls/d3dx10_43/d3dx10_43_main.c
++++ b/dlls/d3dx10_43/d3dx10_43_main.c
+@@ -116,3 +116,9 @@ HRESULT WINAPI D3DX10CreateEffectPoolFromMemory(const void *data, SIZE_T datasiz
+ 
+     return E_NOTIMPL;
+ }
++
++HRESULT WINAPI D3DX10UnsetAllDeviceObjects(ID3D10Device *pDevice)
++{
++    FIXME("stub\n");
++    return E_NOTIMPL;
++}

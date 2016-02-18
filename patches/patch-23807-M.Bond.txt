@@ -1,0 +1,83 @@
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index d3fb1d6..50ae549 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -133,6 +133,8 @@ static const struct wined3d_format_channels formats[] =
+     {WINED3DFMT_ATI2N,                      0,  0,  0,  0,   0,  0,  0,  0,    1,   0,     0},
+     {WINED3DFMT_NVDB,                       0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
+     {WINED3DFMT_INST,                       0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
++    {WINED3DFMT_DF16,                       0,  0,  0,  0,   0,  0,  0,  0,    2,  16,     0},
++    {WINED3DFMT_DF24,                       0,  0,  0,  0,   0,  0,  0,  0,    4,  24,     0},
+     {WINED3DFMT_INTZ,                       0,  0,  0,  0,   0,  0,  0,  0,    4,  24,     8},
+     {WINED3DFMT_RESZ,                       0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
+     {WINED3DFMT_NVHU,                       0,  0,  0,  0,   0,  0,  0,  0,    2,   0,     0},
+@@ -1202,6 +1204,26 @@ static const struct wined3d_format_texture_info format_texture_info[] =
+             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
+             | WINED3DFMT_FLAG_COMPRESSED,
+             ARB_TEXTURE_COMPRESSION_RGTC, NULL},
++    {WINED3DFMT_DF16,                   GL_DEPTH24_STENCIL8_EXT,          GL_DEPTH24_STENCIL8_EXT,                0,
++            GL_DEPTH_STENCIL_EXT,       GL_UNSIGNED_SHORT,                0,
++            WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING | WINED3DFMT_FLAG_DEPTH
++            | WINED3DFMT_FLAG_STENCIL,
++            EXT_PACKED_DEPTH_STENCIL,   NULL},
++    {WINED3DFMT_DF16,                   GL_DEPTH24_STENCIL8,              GL_DEPTH24_STENCIL8,                    0,
++            GL_DEPTH_STENCIL,           GL_UNSIGNED_SHORT,                0,
++            WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING | WINED3DFMT_FLAG_DEPTH
++            | WINED3DFMT_FLAG_STENCIL,
++            ARB_FRAMEBUFFER_OBJECT,     NULL},
++    {WINED3DFMT_DF24,                   GL_DEPTH24_STENCIL8_EXT,          GL_DEPTH24_STENCIL8_EXT,                0,
++            GL_DEPTH_STENCIL_EXT,       GL_UNSIGNED_INT_24_8_EXT,         0,
++            WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING | WINED3DFMT_FLAG_DEPTH
++            | WINED3DFMT_FLAG_STENCIL,
++            EXT_PACKED_DEPTH_STENCIL,   NULL},
++    {WINED3DFMT_DF24,                   GL_DEPTH24_STENCIL8,              GL_DEPTH24_STENCIL8,                    0,
++            GL_DEPTH_STENCIL,           GL_UNSIGNED_INT_24_8,             0,
++            WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING | WINED3DFMT_FLAG_DEPTH
++            | WINED3DFMT_FLAG_STENCIL,
++            ARB_FRAMEBUFFER_OBJECT,     NULL},
+     {WINED3DFMT_INTZ,                   GL_DEPTH24_STENCIL8_EXT,          GL_DEPTH24_STENCIL8_EXT,                0,
+             GL_DEPTH_STENCIL_EXT,       GL_UNSIGNED_INT_24_8_EXT,         0,
+             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
+@@ -2422,6 +2444,8 @@ const char *debug_d3dformat(enum wined3d_format_id format_id)
+         FMT_TO_STR(WINED3DFMT_B5G5R5A1_UNORM);
+         FMT_TO_STR(WINED3DFMT_B8G8R8A8_UNORM);
+         FMT_TO_STR(WINED3DFMT_B8G8R8X8_UNORM);
++        FMT_TO_STR(WINED3DFMT_DF16);
++        FMT_TO_STR(WINED3DFMT_DF24);
+         FMT_TO_STR(WINED3DFMT_INTZ);
+         FMT_TO_STR(WINED3DFMT_RESZ);
+         FMT_TO_STR(WINED3DFMT_NULL);
+@@ -3239,6 +3263,8 @@ BOOL getDepthStencilBits(const struct wined3d_format *format, BYTE *depthSize, B
+         case WINED3DFMT_S8_UINT_D24_FLOAT:
+         case WINED3DFMT_D32_UNORM:
+         case WINED3DFMT_D32_FLOAT:
++        case WINED3DFMT_DF16:
++        case WINED3DFMT_DF24:
+         case WINED3DFMT_INTZ:
+             break;
+         default:
+diff --git a/dlls/winemac.drv/cocoa_app.h b/dlls/winemac.drv/cocoa_app.h
+index fc6c1ec..0786424 100644
+--- a/dlls/winemac.drv/cocoa_app.h
++++ b/dlls/winemac.drv/cocoa_app.h
+@@ -22,7 +22,6 @@
+ 
+ #include "macdrv_cocoa.h"
+ 
+-
+ #define ERR(...) do { if (macdrv_err_on) LogError(__func__, __VA_ARGS__); } while (false)
+ 
+ 
+diff --git a/include/wine/wined3d.h b/include/wine/wined3d.h
+index 8f563bb..34df5d2 100644
+--- a/include/wine/wined3d.h
++++ b/include/wine/wined3d.h
+@@ -247,6 +247,8 @@ enum wined3d_format_id
+     WINED3DFMT_NVDB                         = WINEMAKEFOURCC('N','V','D','B'),
+     WINED3DFMT_NVHU                         = WINEMAKEFOURCC('N','V','H','U'),
+     WINED3DFMT_NVHS                         = WINEMAKEFOURCC('N','V','H','S'),
++    WINED3DFMT_DF16                         = WINEMAKEFOURCC('D','F','1','6'),
++    WINED3DFMT_DF24                         = WINEMAKEFOURCC('D','F','2','4'),
+     WINED3DFMT_INTZ                         = WINEMAKEFOURCC('I','N','T','Z'),
+     WINED3DFMT_RESZ                         = WINEMAKEFOURCC('R','E','S','Z'),
+     WINED3DFMT_NULL                         = WINEMAKEFOURCC('N','U','L','L'),

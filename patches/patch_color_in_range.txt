@@ -1,0 +1,30 @@
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index bd9b710..99e1f7e 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -666,9 +666,22 @@ static void convert_s8_uint_d24_float(const BYTE *src, BYTE *dst, UINT src_row_p
+ static BOOL color_in_range(const struct wined3d_color_key *color_key, DWORD color)
+ {
+     /* FIXME: Is this really how color keys are supposed to work? I think it
+-     * makes more sense to compare the individual channels. */
+-    return color >= color_key->color_space_low_value
+-            && color <= color_key->color_space_high_value;
++     * makes more sense to compare the individual channels. 
++      return color >= color_key->color_space_low_value
++          && color <= color_key->color_space_high_value; */
++ 
++#define RED_KEY(x)   (x & 0xff0000)
++#define GREEN_KEY(x) (x & 0x00ff00)  
++#define BLUE_KEY(x)  (x & 0x0000ff)
++    return ((RED_KEY(color) >= RED_KEY(color_key->color_space_low_value)) &&
++            (RED_KEY(color) <= RED_KEY(color_key->color_space_high_value)) &&
++            (GREEN_KEY(color) >= GREEN_KEY(color_key->color_space_low_value)) &&
++            (GREEN_KEY(color) <= GREEN_KEY(color_key->color_space_high_value)) &&
++            (BLUE_KEY(color) >= BLUE_KEY(color_key->color_space_low_value)) &&
++            (BLUE_KEY(color) <= BLUE_KEY(color_key->color_space_high_value)));
++#undef RED_KEY
++#undef GREEN_KEY
++#undef BLUE_KEY
+ }
+ 
+ static void convert_p8_uint_b8g8r8a8_unorm(const BYTE *src, unsigned int src_pitch,

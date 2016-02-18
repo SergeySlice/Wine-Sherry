@@ -1,0 +1,98 @@
+From b84af4fc51f2a9f4c35892e08b722d47f16d83a8 Mon Sep 17 00:00:00 2001
+From: Josh DuBois <duboisj@codeweavers.com>
+Date: Tue, 28 Apr 2015 06:53:20 -0500
+Subject: [PATCH] Allow GCC compilation on OS X.
+
+---
+ configure                  | 2 +-
+ configure.ac               | 2 +-
+ dlls/ntdll/relay.c         | 8 ++++----
+ dlls/oleaut32/typelib.c    | 8 ++++----
+ dlls/rpcrt4/ndr_stubless.c | 8 ++++----
+ 5 files changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/configure b/configure
+index 17b5833..aba9429 100755
+--- a/configure
++++ b/configure
+@@ -7850,7 +7850,7 @@ uninstall::
+ 
+     APPKIT_LIBS="-framework AppKit"
+ 
+-    LDEXECFLAGS="-image_base 0x7bf00000 -Wl,-segaddr,WINE_DOS,0x00001000,-segaddr,WINE_SHAREDHEAP,0x7f000000,-sectcreate,__TEXT,__info_plist,wine_info.plist"
++    LDEXECFLAGS="-image_base 0x7bf00000 -Wl,-segaddr,WINE_DOS,0x00001000,-segaddr,WINE_SHAREDHEAP,0x7f000000,-sectcreate,__TEXT,__info_plist,wine_info.plist,-pagezero_size,0x1000"
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wl,-no_pie" >&5
+ $as_echo_n "checking whether the compiler supports -Wl,-no_pie... " >&6; }
+ if ${ac_cv_cflags__Wl__no_pie+:} false; then :
+diff --git a/configure.ac b/configure.ac
+index 688ab26..febe761 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -761,7 +761,7 @@ uninstall::
+     AC_SUBST(APPLICATIONSERVICES_LIBS,"-framework ApplicationServices")
+     AC_SUBST(CORESERVICES_LIBS,"-framework CoreServices")
+     AC_SUBST(APPKIT_LIBS,"-framework AppKit")
+-    LDEXECFLAGS="-image_base 0x7bf00000 -Wl,-segaddr,WINE_DOS,0x00001000,-segaddr,WINE_SHAREDHEAP,0x7f000000,-sectcreate,__TEXT,__info_plist,wine_info.plist"
++    LDEXECFLAGS="-image_base 0x7bf00000 -Wl,-segaddr,WINE_DOS,0x00001000,-segaddr,WINE_SHAREDHEAP,0x7f000000,-sectcreate,__TEXT,__info_plist,wine_info.plist,-pagezero_size,0x1000"
+     WINE_TRY_CFLAGS([-Wl,-no_pie],
+                     [LDEXECFLAGS="-Wl,-no_pie $LDEXECFLAGS"])
+     if test "$ac_cv_header_DiskArbitration_DiskArbitration_h" = "yes"
+diff --git a/dlls/ntdll/relay.c b/dlls/ntdll/relay.c
+index 57ad2e1..0ba2731 100644
+--- a/dlls/ntdll/relay.c
++++ b/dlls/ntdll/relay.c
+@@ -624,10 +624,10 @@ __ASM_GLOBAL_FUNC( relay_call,
+                    "movq 8(%rsp),%rdx\n\t"
+                    "movq 16(%rsp),%r8\n\t"
+                    "movq 24(%rsp),%r9\n\t"
+-                   "movq %rcx,%xmm0\n\t"
+-                   "movq %rdx,%xmm1\n\t"
+-                   "movq %r8,%xmm2\n\t"
+-                   "movq %r9,%xmm3\n\t"
++                   "movq 0(%rsp),%xmm0\n\t"
++                   "movq 8(%rsp),%xmm1\n\t"
++                   "movq 16(%rsp),%xmm2\n\t"
++                   "movq 24(%rsp),%xmm3\n\t"
+                    "callq *%rax\n\t"
+                    /* trace the return value */
+                    "leaq -0x30(%rbp),%rsp\n\t"
+diff --git a/dlls/oleaut32/typelib.c b/dlls/oleaut32/typelib.c
+index b8325c0..29bab33 100644
+--- a/dlls/oleaut32/typelib.c
++++ b/dlls/oleaut32/typelib.c
+@@ -6456,10 +6456,10 @@ __ASM_GLOBAL_FUNC( call_method,
+                    "movq 8(%rsp),%rdx\n\t"
+                    "movq 16(%rsp),%r8\n\t"
+                    "movq 24(%rsp),%r9\n\t"
+-                   "movq %rcx,%xmm0\n\t"
+-                   "movq %rdx,%xmm1\n\t"
+-                   "movq %r8,%xmm2\n\t"
+-                   "movq %r9,%xmm3\n\t"
++                   "movq 0(%rsp),%xmm0\n\t"
++                   "movq 8(%rsp),%xmm1\n\t"
++                   "movq 16(%rsp),%xmm2\n\t"
++                   "movq 24(%rsp),%xmm3\n\t"
+                    "callq *%rax\n\t"
+                    "leaq -16(%rbp),%rsp\n\t"
+                    "popq %rdi\n\t"
+diff --git a/dlls/rpcrt4/ndr_stubless.c b/dlls/rpcrt4/ndr_stubless.c
+index 030bfb3..c9d9930 100644
+--- a/dlls/rpcrt4/ndr_stubless.c
++++ b/dlls/rpcrt4/ndr_stubless.c
+@@ -1077,10 +1077,10 @@ __ASM_GLOBAL_FUNC( call_server_func,
+                    "movq 8(%rsp),%rdx\n\t"
+                    "movq 16(%rsp),%r8\n\t"
+                    "movq 24(%rsp),%r9\n\t"
+-                   "movq %rcx,%xmm0\n\t"
+-                   "movq %rdx,%xmm1\n\t"
+-                   "movq %r8,%xmm2\n\t"
+-                   "movq %r9,%xmm3\n\t"
++                   "movq 0(%rsp),%xmm0\n\t"
++                   "movq 8(%rsp),%xmm1\n\t"
++                   "movq 16(%rsp),%xmm2\n\t"
++                   "movq 24(%rsp),%xmm3\n\t"
+                    "callq *%rax\n\t"
+                    "leaq -16(%rbp),%rsp\n\t"  /* restore stack */
+                    "popq %rdi\n\t"
+-- 
+1.8.5.2 (Apple Git-48)

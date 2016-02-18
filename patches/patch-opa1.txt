@@ -1,0 +1,83 @@
+dlls/d3d9/tests/d3d9ex.c |    4 ++--
+dlls/d3d9/tests/device.c |    4 ++--
+dlls/wined3d/device.c    |   13 ++++++++++---
+3 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/dlls/d3d9/tests/d3d9ex.c b/dlls/d3d9/tests/d3d9ex.c
+index 6118ce9..0a7fe90 100644
+--- a/dlls/d3d9/tests/d3d9ex.c
++++ b/dlls/d3d9/tests/d3d9ex.c
+@@ -1064,7 +1064,7 @@ static void test_reset(void)
+
+    ok(d3dpp.BackBufferWidth == 200, "Got unexpected BackBufferWidth %u.\n", d3dpp.BackBufferWidth);
+    ok(d3dpp.BackBufferHeight == 150, "Got unexpected BackBufferHeight %u.\n", d3dpp.BackBufferHeight);
+-    todo_wine ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
++    ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
+            d3dpp.BackBufferFormat, d3ddm.Format);
+    ok(d3dpp.BackBufferCount == 1, "Got unexpected BackBufferCount %u.\n", d3dpp.BackBufferCount);
+    ok(!d3dpp.MultiSampleType, "Got unexpected MultiSampleType %u.\n", d3dpp.MultiSampleType);
+@@ -1100,7 +1100,7 @@ static void test_reset(void)
+    ok(SUCCEEDED(hr), "Failed to get present parameters, hr %#x.\n", hr);
+    ok(d3dpp.BackBufferWidth == 200, "Got unexpected backbuffer width %u.\n", d3dpp.BackBufferWidth);
+    ok(d3dpp.BackBufferHeight == 150, "Got unexpected backbuffer height %u.\n", d3dpp.BackBufferHeight);
+-    todo_wine ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
++    ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
+            d3dpp.BackBufferFormat, d3ddm.Format);
+    ok(d3dpp.BackBufferCount == 1, "Got unexpected BackBufferCount %u.\n", d3dpp.BackBufferCount);
+    ok(!d3dpp.MultiSampleType, "Got unexpected MultiSampleType %u.\n", d3dpp.MultiSampleType);
+diff --git a/dlls/d3d9/tests/device.c b/dlls/d3d9/tests/device.c
+index 174fc13..4d48ea8 100644
+--- a/dlls/d3d9/tests/device.c
++++ b/dlls/d3d9/tests/device.c
+@@ -1869,7 +1869,7 @@ static void test_reset(void)
+
+    ok(d3dpp.BackBufferWidth == 200, "Got unexpected BackBufferWidth %u.\n", d3dpp.BackBufferWidth);
+    ok(d3dpp.BackBufferHeight == 150, "Got unexpected BackBufferHeight %u.\n", d3dpp.BackBufferHeight);
+-    todo_wine ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
++    ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
+            d3dpp.BackBufferFormat, d3ddm.Format);
+    ok(d3dpp.BackBufferCount == 1, "Got unexpected BackBufferCount %u.\n", d3dpp.BackBufferCount);
+    ok(!d3dpp.MultiSampleType, "Got unexpected MultiSampleType %u.\n", d3dpp.MultiSampleType);
+@@ -1904,7 +1904,7 @@ static void test_reset(void)
+    ok(SUCCEEDED(hr), "Failed to get present parameters, hr %#x.\n", hr);
+    ok(d3dpp.BackBufferWidth == 200, "Got unexpected BackBufferWidth %u.\n", d3dpp.BackBufferWidth);
+    ok(d3dpp.BackBufferHeight == 150, "Got unexpected BackBufferHeight %u.\n", d3dpp.BackBufferHeight);
+-    todo_wine ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
++    ok(d3dpp.BackBufferFormat == d3ddm.Format, "Got unexpected BackBufferFormat %#x, expected %#x.\n",
+            d3dpp.BackBufferFormat, d3ddm.Format);
+    ok(d3dpp.BackBufferCount == 1, "Got unexpected BackBufferCount %u.\n", d3dpp.BackBufferCount);
+    ok(!d3dpp.MultiSampleType, "Got unexpected MultiSampleType %u.\n", d3dpp.MultiSampleType);
+diff --git a/dlls/wined3d/device.c b/dlls/wined3d/device.c
+index 870e384..20a0e23 100644
+--- a/dlls/wined3d/device.c
++++ b/dlls/wined3d/device.c
+@@ -4331,6 +4331,7 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
+        const struct wined3d_swapchain_desc *swapchain_desc, const struct wined3d_display_mode *mode,
+        wined3d_device_reset_cb callback, BOOL reset_state)
+{
++    enum wined3d_format_id backbuffer_format = swapchain_desc->backbuffer_format;
+    struct wined3d_resource *resource, *cursor;
+    struct wined3d_swapchain *swapchain;
+    struct wined3d_display_mode m;
+@@ -4492,10 +4493,16 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
+        update_desc = TRUE;
+    }
+
+-    if (swapchain_desc->backbuffer_format != WINED3DFMT_UNKNOWN
+-            && swapchain_desc->backbuffer_format != swapchain->desc.backbuffer_format)
++    if (backbuffer_format == WINED3DFMT_UNKNOWN)
+    {
+-        swapchain->desc.backbuffer_format = swapchain_desc->backbuffer_format;
++        if (!swapchain_desc->windowed)
++            return WINED3DERR_INVALIDCALL;
++        backbuffer_format = swapchain->original_mode.format_id;
++    }
++
++    if (backbuffer_format != swapchain->desc.backbuffer_format)
++    {
++        swapchain->desc.backbuffer_format = backbuffer_format;
+        update_desc = TRUE;
+    }
+
+-- 
+1.7.10.4

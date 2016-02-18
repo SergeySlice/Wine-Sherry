@@ -1,0 +1,255 @@
+diff -rupN wine-1.7.54-ori/dlls/wined3d/glsl_shader.c wine-1.7.54/dlls/wined3d/glsl_shader.c
+--- wine-1.7.54-ori/dlls/wined3d/glsl_shader.c	2015-10-30 16:20:44.000000000 +0300
++++ wine-1.7.54/dlls/wined3d/glsl_shader.c	2015-11-03 12:02:41.063508083 +0300
+@@ -5768,8 +5768,7 @@ static GLuint shader_glsl_generate_ffp_v
+     {
+         {"vec4", "ffp_attrib_position"},        /* WINED3D_FFP_POSITION */
+         {"vec4", "ffp_attrib_blendweight"},     /* WINED3D_FFP_BLENDWEIGHT */
+-        /* TODO: Indexed vertex blending */
+-        {"float", ""},                          /* WINED3D_FFP_BLENDINDICES */
++        {"vec4", "ffp_attrib_blendindices"},   /* WINED3D_FFP_BLENDINDICES */
+         {"vec3", "ffp_attrib_normal"},          /* WINED3D_FFP_NORMAL */
+         {"float", "ffp_attrib_psize"},          /* WINED3D_FFP_PSIZE */
+         {"vec4", "ffp_attrib_diffuse"},         /* WINED3D_FFP_DIFFUSE */
+@@ -5853,6 +5852,8 @@ static GLuint shader_glsl_generate_ffp_v
+     shader_addline(buffer, "\nvoid main()\n{\n");
+     shader_addline(buffer, "float m;\n");
+     shader_addline(buffer, "vec3 r;\n");
++    if (settings->vb_indices)
++    	shader_addline(buffer, "    int ind;\n");
+ 
+     for (i = 0; i < ARRAY_SIZE(attrib_info); ++i)
+     {
+@@ -5883,8 +5884,17 @@ static GLuint shader_glsl_generate_ffp_v
+             shader_addline(buffer, "ffp_attrib_blendweight[%u] -= ffp_attrib_blendweight[%u];\n", settings->vertexblends, i);
+ 
+         shader_addline(buffer, "vec4 ec_pos = vec4(0.0);\n");
+-        for (i = 0; i < settings->vertexblends + 1; ++i)
++        for (i = 0; i < settings->vertexblends + 1; ++i) {
++	 if (settings->vb_indices) {
++	    shader_addline(buffer, "if (ffp_attrib_blendindices[%u] >= 0) {\n",i);
++	    shader_addline(buffer, "ind = int(ffp_attrib_blendindices[%u]+0.1);\n", i);
++	    shader_addline(buffer, "ec_pos += ffp_attrib_blendweight[%u] * (ffp_modelview_matrix[ind] * ffp_attrib_position);\n", i);
++	    shader_addline(buffer, "}\n");
++	 } else {
+             shader_addline(buffer, "ec_pos += ffp_attrib_blendweight[%u] * (ffp_modelview_matrix[%u] * ffp_attrib_position);\n", i, i);
++	  }
++	    
++	}
+ 
+         shader_addline(buffer, "gl_Position = ffp_projection_matrix * ec_pos;\n");
+         if (settings->clipping)
+@@ -5901,8 +5911,13 @@ static GLuint shader_glsl_generate_ffp_v
+         }
+         else
+         {
+-            for (i = 0; i < settings->vertexblends + 1; ++i)
+-                shader_addline(buffer, "normal += ffp_attrib_blendweight[%u] * (mat3(ffp_modelview_matrix[%u]) * ffp_attrib_normal);\n", i, i);
++            for (i = 0; i < settings->vertexblends + 1; ++i) {
++	        if (settings->vb_indices) {
++			shader_addline(buffer, "ind = int(ffp_attrib_blendindices[%u]+0.1);\n", i);
++			shader_addline(buffer, "normal += ffp_attrib_blendweight[%u] * (mat3(ffp_modelview_matrix[ind]) * ffp_attrib_normal);\n", i);
++		} else
++                	shader_addline(buffer, "normal += ffp_attrib_blendweight[%u] * (mat3(ffp_modelview_matrix[%u]) * ffp_attrib_normal);\n", i, i);
++	   }
+         }
+ 
+         if (settings->normalize)
+@@ -7998,7 +8013,7 @@ static void glsl_vertex_pipe_vp_get_caps
+     caps->ffp_generic_attributes = TRUE;
+     caps->max_active_lights = MAX_ACTIVE_LIGHTS;
+     caps->max_vertex_blend_matrices = MAX_VERTEX_BLENDS;
+-    caps->max_vertex_blend_matrix_index = 0;
++    caps->max_vertex_blend_matrix_index = MAX_VERTEX_BLENDS-1;
+     caps->vertex_processing_caps = WINED3DVTXPCAPS_TEXGEN
+             | WINED3DVTXPCAPS_MATERIALSOURCE7
+             | WINED3DVTXPCAPS_VERTEXFOG
+@@ -8303,6 +8318,131 @@ static const struct StateEntryTemplate g
+     {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(1)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(1)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
+     {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(2)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(2)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
+     {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(3)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(3)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(4)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(4)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(5)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(5)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(6)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(6)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(7)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(7)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(8)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(8)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(9)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(9)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(10)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(10)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(11)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(11)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(12)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(12)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(13)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(13)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(14)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(14)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(15)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(15)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(16)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(16)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(17)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(17)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(18)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(18)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(19)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(19)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(20)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(20)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(21)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(21)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(22)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(22)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(23)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(23)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(24)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(24)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(25)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(25)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(26)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(26)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(27)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(27)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(28)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(28)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(29)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(29)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(30)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(30)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(31)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(31)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(32)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(32)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(33)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(33)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(34)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(34)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(35)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(35)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(36)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(36)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(37)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(37)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(38)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(38)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(39)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(39)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(40)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(40)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(41)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(41)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(42)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(42)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(43)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(43)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(44)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(44)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(45)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(45)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(46)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(46)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(47)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(47)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(48)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(48)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(49)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(49)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(50)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(50)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(51)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(51)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(52)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(52)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(53)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(53)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(54)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(54)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(55)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(55)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(56)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(56)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(57)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(57)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(58)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(58)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(59)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(59)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(60)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(60)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(61)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(61)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(62)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(62)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(63)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(63)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(64)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(64)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(65)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(65)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(66)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(66)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(67)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(67)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(68)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(68)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(69)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(69)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(70)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(70)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(71)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(71)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(72)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(72)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(73)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(73)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(74)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(74)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(75)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(75)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(76)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(76)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(77)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(77)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(78)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(78)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(79)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(79)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(80)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(80)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(81)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(81)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(82)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(82)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(83)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(83)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(84)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(84)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(85)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(85)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(86)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(86)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(87)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(87)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(88)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(88)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(89)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(89)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(90)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(90)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(91)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(91)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(92)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(92)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(93)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(93)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(94)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(94)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(95)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(95)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(96)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(96)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(97)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(97)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(98)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(98)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(99)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(99)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(100)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(100)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(101)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(101)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(102)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(102)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(103)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(103)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(104)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(104)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(105)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(105)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(106)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(106)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(107)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(107)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(108)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(108)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(109)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(109)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(110)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(110)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(111)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(111)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(112)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(112)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(113)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(113)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(114)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(114)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(115)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(115)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(116)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(116)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(117)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(117)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(118)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(118)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(119)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(119)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++   {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(120)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(120)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(121)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(121)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(122)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(122)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(123)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(123)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(124)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(124)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(125)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(125)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(126)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(126)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(127)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(127)),               glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
++    
+     {STATE_TEXTURESTAGE(0, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(0, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), glsl_vertex_pipe_texmatrix}, WINED3D_GL_EXT_NONE       },
+     {STATE_TEXTURESTAGE(1, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(1, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), glsl_vertex_pipe_texmatrix}, WINED3D_GL_EXT_NONE       },
+     {STATE_TEXTURESTAGE(2, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(2, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), glsl_vertex_pipe_texmatrix}, WINED3D_GL_EXT_NONE       },
+diff -rupN wine-1.7.54-ori/dlls/wined3d/utils.c wine-1.7.54/dlls/wined3d/utils.c
+--- wine-1.7.54-ori/dlls/wined3d/utils.c	2015-10-30 16:20:44.000000000 +0300
++++ wine-1.7.54/dlls/wined3d/utils.c	2015-11-03 12:02:41.066508076 +0300
+@@ -4944,6 +4944,10 @@ void wined3d_ffp_get_vs_settings(const s
+         settings->fog_mode = WINED3D_FFP_VS_FOG_DEPTH;
+ 
+     settings->padding = 0;
++    
++    settings->vb_indices = 0;
++    if (state->render_states[WINED3D_RS_INDEXEDVERTEXBLENDENABLE] != 0 && (si->use_map & (1 << WINED3D_FFP_BLENDINDICES)) != 0)
++    	settings->vb_indices = 1;
+ }
+ 
+ static int wined3d_ffp_vertex_program_key_compare(const void *key, const struct wine_rb_entry *entry)
+diff -rupN wine-1.7.54-ori/dlls/wined3d/vertexdeclaration.c wine-1.7.54/dlls/wined3d/vertexdeclaration.c
+--- wine-1.7.54-ori/dlls/wined3d/vertexdeclaration.c	2015-10-30 16:20:44.000000000 +0300
++++ wine-1.7.54/dlls/wined3d/vertexdeclaration.c	2015-11-03 12:02:41.066508076 +0300
+@@ -110,6 +110,16 @@ static BOOL declaration_element_valid_ff
+                 default:
+                     return FALSE;
+             }
++	    
++	case WINED3D_DECL_USAGE_BLEND_INDICES:
++            switch(element->format)
++            {
++                case WINED3DFMT_R8G8B8A8_UINT:
++                    return TRUE;
++                default:
++                    return FALSE;
++            }
++
+ 
+         case WINED3D_DECL_USAGE_NORMAL:
+             switch(element->format)
+diff -rupN wine-1.7.54-ori/dlls/wined3d/wined3d_private.h wine-1.7.54/dlls/wined3d/wined3d_private.h
+--- wine-1.7.54-ori/dlls/wined3d/wined3d_private.h	2015-10-30 16:20:44.000000000 +0300
++++ wine-1.7.54/dlls/wined3d/wined3d_private.h	2015-11-03 12:02:41.068508071 +0300
+@@ -184,7 +184,7 @@ void wined3d_rb_free(void *ptr) DECLSPEC
+ #define MAX_CONSTANT_BUFFERS        15
+ #define MAX_SAMPLER_OBJECTS         16
+ #define MAX_SHADER_RESOURCE_VIEWS   128
+-#define MAX_VERTEX_BLENDS           4
++#define MAX_VERTEX_BLENDS           148
+ 
+ struct min_lookup
+ {
+@@ -1939,8 +1939,8 @@ struct wined3d_ffp_vs_settings
+     DWORD fog_mode        : 2;
+     DWORD texcoords       : 8;  /* MAX_TEXTURES */
+     DWORD ortho_fog       : 1;
+-    DWORD padding         : 11;
+-
++    DWORD vb_indices	  : 1;
++    DWORD padding         : 10;
+     DWORD texgen[MAX_TEXTURES];
+ };
+ 

@@ -1,0 +1,24 @@
+From 364ccbf3712668b9aaa4b4e0e43d9e9e00470890 Mon Sep 17 00:00:00 2001
+From: Christian Costa <titan.costa@gmail.com>
+Date: Mon, 29 Dec 2014 01:54:07 +0100
+Subject: disable antialiasing font
+
+---
+ dlls/gdi32/dibdrv/graphics.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/dlls/gdi32/dibdrv/graphics.c b/dlls/gdi32/dibdrv/graphics.c
+index 2c865c0..231fe46 100644
+--- a/dlls/gdi32/dibdrv/graphics.c
++++ b/dlls/gdi32/dibdrv/graphics.c
+@@ -874,6 +874,8 @@ HFONT dibdrv_SelectFont( PHYSDEV dev, HFONT font, UINT *aa_flags )
+     dibdrv_physdev *pdev = get_dibdrv_pdev(dev);
+     HFONT ret;
+ 
++    *aa_flags = GGO_BITMAP;
++
+     if (pdev->dib.bit_count <= 8) *aa_flags = GGO_BITMAP;  /* no anti-aliasing on <= 8bpp */
+ 
+     dev = GET_NEXT_PHYSDEV( dev, pSelectFont );
+-- 
+2.1.0

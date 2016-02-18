@@ -1,0 +1,61 @@
+From 4e53837728e3690d3dc0b2a61b0c166b2182e9ea Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Bernhard=20=C3=9Cbelacker?= <bernhardu@vr-web.de>
+Date: Thu, 3 Dec 2015 16:31:50 +0100
+Subject: ntoskrnl.exe: Avoid crash in acedrv11.sys.
+Reply-To: wine-devel <wine-devel@winehq.org>
+
+https://bugs.winehq.org/show_bug.cgi?id=39734
+---
+ dlls/ntoskrnl.exe/ntoskrnl.c | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/dlls/ntoskrnl.exe/ntoskrnl.c b/dlls/ntoskrnl.exe/ntoskrnl.c
+index 04f0198..f628350 100644
+--- a/dlls/ntoskrnl.exe/ntoskrnl.c
++++ b/dlls/ntoskrnl.exe/ntoskrnl.c
+@@ -550,17 +550,17 @@ PVOID WINAPI IoGetDriverObjectExtension( PDRIVER_OBJECT DriverObject,
+  */
+ void WINAPI IoInitializeIrp( IRP *irp, USHORT size, CCHAR stack_size )
+ {
+-    TRACE( "%p, %u, %d\n", irp, size, stack_size );
++    TRACE( "%p, %u, 0x%x\n", irp, size, (unsigned char)stack_size );
+ 
+     RtlZeroMemory( irp, size );
+ 
+     irp->Type = IO_TYPE_IRP;
+     irp->Size = size;
+     InitializeListHead( &irp->ThreadListEntry );
+-    irp->StackCount = stack_size;
+-    irp->CurrentLocation = stack_size + 1;
++    irp->StackCount = (unsigned char)stack_size;
++    irp->CurrentLocation = ((unsigned char)stack_size) + 1;
+     irp->Tail.Overlay.s.u2.CurrentStackLocation =
+-            (PIO_STACK_LOCATION)(irp + 1) + stack_size;
++            (PIO_STACK_LOCATION)(irp + 1) + (unsigned char)stack_size;
+ }
+ 
+ 
+@@ -593,9 +593,9 @@ PIRP WINAPI IoAllocateIrp( CCHAR stack_size, BOOLEAN charge_quota )
+     SIZE_T size;
+     PIRP irp;
+ 
+-    TRACE( "%d, %d\n", stack_size, charge_quota );
++    TRACE( "0x%x, %d\n", (unsigned char)stack_size, charge_quota );
+ 
+-    size = sizeof(IRP) + stack_size * sizeof(IO_STACK_LOCATION);
++    size = sizeof(IRP) + ((unsigned char)stack_size) * sizeof(IO_STACK_LOCATION);
+     irp = ExAllocatePool( NonPagedPool, size );
+     if (irp == NULL)
+         return NULL;
+@@ -1059,6 +1059,9 @@ NTSTATUS WINAPI IoCallDriver( DEVICE_OBJECT *device, IRP *irp )
+     irpsp = --irp->Tail.Overlay.s.u2.CurrentStackLocation;
+     dispatch = device->DriverObject->MajorFunction[irpsp->MajorFunction];
+ 
++    if (!dispatch)
++        return STATUS_UNSUCCESSFUL;
++
+     if (TRACE_ON(relay))
+         DPRINTF( "%04x:Call driver dispatch %p (device=%p,irp=%p)\n",
+                  GetCurrentThreadId(), dispatch, device, irp );
+-- 
+2.1.4

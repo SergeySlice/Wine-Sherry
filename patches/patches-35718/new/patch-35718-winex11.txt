@@ -1,0 +1,2320 @@
+commit 9ed113b72237c4ffec29e3944e6660d87acf48d9
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Wed Feb 10 01:04:09 2016 +0300
+
+    patch for 35718 by Ken Thomases, winex11.drv
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/winex11.drv/desktop.c b/dlls/winex11.drv/desktop.c
+index edc40a7..0414f3c 100644
+--- a/dlls/winex11.drv/desktop.c
++++ b/dlls/winex11.drv/desktop.c
+@@ -282,5 +282,6 @@ void X11DRV_resize_desktop( unsigned int width, unsigned int height )
+         ungrab_clipping_window();
+     }
+ 
++    sync_gl_fullscreen_to_desktop( width, height );
+     EnumWindows( update_windows_on_desktop_resize, (LPARAM)&resize_data );
+ }
+diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
+index e7139eb..234e076 100644
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -380,10 +380,17 @@ static inline void call_event_handler( Display *display, XEvent *event )
+     XEvent *prev;
+     struct x11drv_thread_data *thread_data;
+ 
++    thread_data = x11drv_thread_data();
++    prev = thread_data->current_event;
++    thread_data->current_event = event;
++
++    if (gl_handle_event( display, event ))
++        goto done;
++
+     if (!handlers[event->type])
+     {
+         TRACE( "%s for win %lx, ignoring\n", dbgstr_event( event->type ), event->xany.window );
+-        return;  /* no handler, ignore it */
++        goto done;  /* no handler, ignore it */
+     }
+ 
+     if (XFindContext( display, event->xany.window, winContext, (char **)&hwnd ) != 0)
+@@ -392,10 +399,8 @@ static inline void call_event_handler( Display *display, XEvent *event )
+ 
+     TRACE( "%lu %s for hwnd/window %p/%lx\n",
+            event->xany.serial, dbgstr_event( event->type ), hwnd, event->xany.window );
+-    thread_data = x11drv_thread_data();
+-    prev = thread_data->current_event;
+-    thread_data->current_event = event;
+     handlers[event->type]( hwnd, event );
++done:
+     thread_data->current_event = prev;
+ }
+ 
+@@ -540,7 +545,7 @@ DWORD EVENT_x11_time_to_win32_time(Time time)
+  *
+  * Check if we can activate the specified window.
+  */
+-static inline BOOL can_activate_window( HWND hwnd )
++BOOL can_activate_window( HWND hwnd )
+ {
+     LONG style = GetWindowLongW( hwnd, GWL_STYLE );
+     RECT rect;
+@@ -581,7 +586,10 @@ static void set_input_focus( struct x11drv_win_data *data )
+     if (data->embedder)
+         xembed_request_focus( data->display, data->embedder, timestamp );
+     else
++    {
++        TRACE("XSetInputFocus(%lx)\n", data->whole_window);
+         XSetInputFocus( data->display, data->whole_window, RevertToParent, timestamp );
++    }
+ 
+ }
+ 
+@@ -597,6 +605,8 @@ static void set_focus( Display *display, HWND hwnd, Time time )
+     TRACE( "setting foreground window to %p\n", hwnd );
+     SetForegroundWindow( hwnd );
+ 
++    if (gl_has_fullscreen_windows()) return;
++
+     threadinfo.cbSize = sizeof(threadinfo);
+     GetGUIThreadInfo(0, &threadinfo);
+     focus = threadinfo.hwndFocus;
+@@ -607,6 +617,7 @@ static void set_focus( Display *display, HWND hwnd, Time time )
+     if (win)
+     {
+         TRACE( "setting focus to %p (%lx) time=%ld\n", focus, win, time );
++        TRACE("XSetInputFocus(%lx)\n", win);
+         XSetInputFocus( display, win, RevertToParent, time );
+     }
+ }
+@@ -626,7 +637,7 @@ static void handle_manager_message( HWND hwnd, XClientMessageEvent *event )
+ /**********************************************************************
+  *              handle_wm_protocols
+  */
+-static void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
++void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
+ {
+     Atom protocol = (Atom)event->data.l[0];
+     Time event_time = (Time)event->data.l[1];
+@@ -782,7 +793,7 @@ static void X11DRV_FocusIn( HWND hwnd, XEvent *xev )
+ /**********************************************************************
+  *              focus_out
+  */
+- static void focus_out( Display *display , HWND hwnd )
++void focus_out( Display *display , HWND hwnd )
+  {
+     HWND hwnd_tmp;
+     Window focus_win;
+@@ -806,7 +817,7 @@ static void X11DRV_FocusIn( HWND hwnd, XEvent *xev )
+        getting the focus is a Wine window */
+ 
+     XGetInputFocus( display, &focus_win, &revert );
+-    if (focus_win)
++    if (focus_win && !is_gl_fullscreen_window( focus_win ))
+     {
+         if (XFindContext( display, focus_win, winContext, (char **)&hwnd_tmp ) != 0)
+             focus_win = 0;
+@@ -858,6 +869,8 @@ static void X11DRV_Expose( HWND hwnd, XEvent *xev )
+     struct x11drv_win_data *data;
+     HRGN surface_region = 0;
+     UINT flags = RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN;
++    struct x11drv_client_window *client_window;
++    BOOL is_client_window = FALSE;
+ 
+     TRACE( "win %p (%lx) %d,%d %dx%d\n",
+            hwnd, event->window, event->x, event->y, event->width, event->height );
+@@ -876,7 +889,15 @@ static void X11DRV_Expose( HWND hwnd, XEvent *xev )
+     rect.right  = pos.x + event->width;
+     rect.bottom = pos.y + event->height;
+ 
+-    if (event->window != data->client_window)
++    LIST_FOR_EACH_ENTRY( client_window, &data->client_windows, struct x11drv_client_window, entry )
++    {
++        if (event->window == client_window->window)
++        {
++            is_client_window = TRUE;
++            break;
++        }
++    }
++    if (!is_client_window)
+     {
+         if (data->surface)
+         {
+@@ -929,6 +950,7 @@ static void X11DRV_MapNotify( HWND hwnd, XEvent *event )
+         clipping_cursor = TRUE;
+         return;
+     }
++    if (gl_has_fullscreen_windows()) return;
+     if (!(data = get_win_data( hwnd ))) return;
+ 
+     if (!data->managed && !data->embedded && data->mapped)
+@@ -1381,6 +1403,7 @@ void CDECL X11DRV_SetFocus( HWND hwnd )
+ 
+     HWND parent;
+ 
++    if (gl_has_fullscreen_windows()) return;
+     for (;;)
+     {
+         if (!(data = get_win_data( hwnd ))) return;
+diff --git a/dlls/winex11.drv/keyboard.c b/dlls/winex11.drv/keyboard.c
+index 47a9872..86fc448 100644
+--- a/dlls/winex11.drv/keyboard.c
++++ b/dlls/winex11.drv/keyboard.c
+@@ -1359,6 +1359,7 @@ static void update_lock_state( HWND hwnd, WORD vkey, UINT state, DWORD time )
+  */
+ void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
+ {
++    HWND ic_hwnd = hwnd;
+     XKeyEvent *event = &xev->xkey;
+     char buf[24];
+     char *Str = buf;
+@@ -1366,7 +1367,7 @@ void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
+     WORD vkey = 0, bScan;
+     DWORD dwFlags;
+     int ascii_chars;
+-    XIC xic = X11DRV_get_ic( hwnd );
++    XIC xic;
+     DWORD event_time = EVENT_x11_time_to_win32_time(event->time);
+     Status status = 0;
+ 
+@@ -1376,6 +1377,14 @@ void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
+     if (event->type == KeyPress) update_user_time( event->time );
+ 
+     /* Clients should pass only KeyPress events to XmbLookupString */
++    if (!ic_hwnd && is_gl_fullscreen_window( event->window ))
++    {
++        ic_hwnd = GetFocus();
++        if (ic_hwnd) ic_hwnd = GetAncestor( ic_hwnd, GA_ROOT );
++        if (!ic_hwnd) ic_hwnd = GetActiveWindow();
++        if (!ic_hwnd) ic_hwnd = x11drv_thread_data()->last_focus;
++    }
++    xic = X11DRV_get_ic( ic_hwnd );
+     if (xic && event->type == KeyPress)
+     {
+         ascii_chars = XmbLookupString(xic, event, buf, sizeof(buf), &keysym, &status);
+diff --git a/dlls/winex11.drv/mouse.c b/dlls/winex11.drv/mouse.c
+index 63d202c..e6a35cf 100644
+--- a/dlls/winex11.drv/mouse.c
++++ b/dlls/winex11.drv/mouse.c
+@@ -490,22 +490,26 @@ LRESULT clip_cursor_notify( HWND hwnd, HWND new_clip_hwnd )
+  */
+ BOOL clip_fullscreen_window( HWND hwnd, BOOL reset )
+ {
+-    struct x11drv_win_data *data;
+     struct x11drv_thread_data *thread_data;
+     RECT rect;
+-    DWORD style;
+-    BOOL fullscreen;
+-
+-    if (hwnd == GetDesktopWindow()) return FALSE;
+-    style = GetWindowLongW( hwnd, GWL_STYLE );
+-    if (!(style & WS_VISIBLE)) return FALSE;
+-    if ((style & (WS_POPUP | WS_CHILD)) == WS_CHILD) return FALSE;
+-    /* maximized windows don't count as full screen */
+-    if ((style & WS_MAXIMIZE) && (style & WS_CAPTION) == WS_CAPTION) return FALSE;
+-    if (!(data = get_win_data( hwnd ))) return FALSE;
+-    fullscreen = is_window_rect_fullscreen( &data->whole_rect );
+-    release_win_data( data );
+-    if (!fullscreen) return FALSE;
++
++    if (hwnd)
++    {
++        struct x11drv_win_data *data;
++        DWORD style;
++        BOOL fullscreen;
++
++        if (hwnd == GetDesktopWindow()) return FALSE;
++        style = GetWindowLongW( hwnd, GWL_STYLE );
++        if (!(style & WS_VISIBLE)) return FALSE;
++        if ((style & (WS_POPUP | WS_CHILD)) == WS_CHILD) return FALSE;
++        /* maximized windows don't count as full screen */
++        if ((style & WS_MAXIMIZE) && (style & WS_CAPTION) == WS_CAPTION) return FALSE;
++        if (!(data = get_win_data( hwnd ))) return FALSE;
++        fullscreen = is_window_rect_fullscreen( &data->whole_rect );
++        release_win_data( data );
++        if (!fullscreen) return FALSE;
++    }
+     if (!(thread_data = x11drv_thread_data())) return FALSE;
+     if (GetTickCount() - thread_data->clip_reset < 1000) return FALSE;
+     if (!reset && clipping_cursor && thread_data->clip_hwnd) return FALSE;  /* already clipping */
+@@ -536,6 +540,19 @@ static BOOL is_old_motion_event( unsigned long serial )
+ 
+ 
+ /***********************************************************************
++ *		set_cursor_window
++ */
++static void set_cursor_window( HWND hwnd, Window window, Time time )
++{
++    if (InterlockedExchangePointer( (void **)&cursor_window, hwnd ) != hwnd ||
++        time - last_cursor_change > 100)
++    {
++        sync_window_cursor( window );
++        last_cursor_change = time;
++    }
++}
++
++/***********************************************************************
+  *		send_mouse_input
+  *
+  * Update the various window states on a mouse event.
+@@ -549,19 +566,29 @@ static void send_mouse_input( HWND hwnd, Window window, unsigned int state, INPU
+ 
+     if (!hwnd)
+     {
+-        struct x11drv_thread_data *thread_data = x11drv_thread_data();
+-        HWND clip_hwnd = thread_data->clip_hwnd;
++        if (is_gl_fullscreen_window( window ))
++        {
++            set_cursor_window( gl_cursor_window_for_fullscreen( window ), window, input->u.mi.time );
+ 
+-        if (!clip_hwnd) return;
+-        if (thread_data->clip_window != window) return;
+-        if (InterlockedExchangePointer( (void **)&cursor_window, clip_hwnd ) != clip_hwnd ||
+-            input->u.mi.time - last_cursor_change > 100)
++            if (input->u.mi.dwFlags & (MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_RIGHTDOWN))
++                clip_fullscreen_window( NULL, FALSE );
++
++            pt = root_to_virtual_screen( input->u.mi.dx, input->u.mi.dy );
++            input->u.mi.dx = pt.x;
++            input->u.mi.dy = pt.y;
++        }
++        else
+         {
+-            sync_window_cursor( window );
+-            last_cursor_change = input->u.mi.time;
++            struct x11drv_thread_data *thread_data = x11drv_thread_data();
++            HWND clip_hwnd = thread_data->clip_hwnd;
++
++            if (!clip_hwnd) return;
++            if (thread_data->clip_window != window) return;
++            set_cursor_window( clip_hwnd, window, input->u.mi.time );
++            input->u.mi.dx += clip_rect.left;
++            input->u.mi.dy += clip_rect.top;
+         }
+-        input->u.mi.dx += clip_rect.left;
+-        input->u.mi.dy += clip_rect.top;
++
+         __wine_send_input( hwnd, input );
+         return;
+     }
+@@ -585,12 +612,7 @@ static void send_mouse_input( HWND hwnd, Window window, unsigned int state, INPU
+         pt.x = data->client_rect.right - data->client_rect.left - 1 - pt.x;
+     MapWindowPoints( hwnd, 0, &pt, 1 );
+ 
+-    if (InterlockedExchangePointer( (void **)&cursor_window, hwnd ) != hwnd ||
+-        input->u.mi.time - last_cursor_change > 100)
+-    {
+-        sync_window_cursor( data->whole_window );
+-        last_cursor_change = input->u.mi.time;
+-    }
++    set_cursor_window( hwnd, data->whole_window, input->u.mi.time );
+     release_win_data( data );
+ 
+     if (hwnd != GetDesktopWindow())
+@@ -1328,6 +1350,50 @@ static Cursor create_cursor( HANDLE handle )
+     return cursor;
+ }
+ 
++/* Verify that the layout of XMotionEvent and XCrossingEvent structs are the
++   same as XButtonEvent for the fields we're interested in. */
++C_ASSERT(FIELD_OFFSET(XMotionEvent, display)    == FIELD_OFFSET(XButtonEvent, display));
++C_ASSERT(FIELD_OFFSET(XMotionEvent, window)     == FIELD_OFFSET(XButtonEvent, window));
++C_ASSERT(FIELD_OFFSET(XMotionEvent, time)       == FIELD_OFFSET(XButtonEvent, time));
++C_ASSERT(FIELD_OFFSET(XMotionEvent, x)          == FIELD_OFFSET(XButtonEvent, x));
++C_ASSERT(FIELD_OFFSET(XMotionEvent, y)          == FIELD_OFFSET(XButtonEvent, y));
++C_ASSERT(FIELD_OFFSET(XMotionEvent, x_root)     == FIELD_OFFSET(XButtonEvent, x_root));
++C_ASSERT(FIELD_OFFSET(XMotionEvent, y_root)     == FIELD_OFFSET(XButtonEvent, y_root));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, display)  == FIELD_OFFSET(XButtonEvent, display));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, window)   == FIELD_OFFSET(XButtonEvent, window));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, time)     == FIELD_OFFSET(XButtonEvent, time));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, x)        == FIELD_OFFSET(XButtonEvent, x));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, y)        == FIELD_OFFSET(XButtonEvent, y));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, x_root)   == FIELD_OFFSET(XButtonEvent, x_root));
++C_ASSERT(FIELD_OFFSET(XCrossingEvent, y_root)   == FIELD_OFFSET(XButtonEvent, y_root));
++
++static void fill_input( HWND hwnd, XButtonEvent *event, INPUT *input )
++{
++    if (hwnd || !is_gl_fullscreen_window( event->window ))
++    {
++        input->u.mi.dx = event->x;
++        input->u.mi.dy = event->y;
++    }
++    else if (root_window == DefaultRootWindow( event->display ))
++    {
++        input->u.mi.dx = event->x_root;
++        input->u.mi.dy = event->y_root;
++    }
++    else
++    {
++        int x, y;
++        Window child;
++
++        XTranslateCoordinates( event->display, event->window, root_window,
++                               event->x, event->y, &x, &y, &child );
++        input->u.mi.dx = x;
++        input->u.mi.dy = y;
++    }
++
++    input->u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
++    input->u.mi.dwExtraInfo = 0;
++}
++
+ /***********************************************************************
+  *		DestroyCursorIcon (X11DRV.@)
+  */
+@@ -1537,12 +1603,9 @@ void X11DRV_ButtonPress( HWND hwnd, XEvent *xev )
+ 
+     TRACE( "hwnd %p/%lx button %u pos %d,%d\n", hwnd, event->window, buttonNum, event->x, event->y );
+ 
+-    input.u.mi.dx          = event->x;
+-    input.u.mi.dy          = event->y;
++    fill_input( hwnd, event, &input );
+     input.u.mi.mouseData   = button_down_data[buttonNum];
+     input.u.mi.dwFlags     = button_down_flags[buttonNum] | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
+-    input.u.mi.dwExtraInfo = 0;
+ 
+     update_user_time( event->time );
+     send_mouse_input( hwnd, event->window, event->state, &input );
+@@ -1562,12 +1625,9 @@ void X11DRV_ButtonRelease( HWND hwnd, XEvent *xev )
+ 
+     TRACE( "hwnd %p/%lx button %u pos %d,%d\n", hwnd, event->window, buttonNum, event->x, event->y );
+ 
+-    input.u.mi.dx          = event->x;
+-    input.u.mi.dy          = event->y;
++    fill_input( hwnd, event, &input );
+     input.u.mi.mouseData   = button_up_data[buttonNum];
+     input.u.mi.dwFlags     = button_up_flags[buttonNum] | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
+-    input.u.mi.dwExtraInfo = 0;
+ 
+     send_mouse_input( hwnd, event->window, event->state, &input );
+ }
+@@ -1584,14 +1644,11 @@ void X11DRV_MotionNotify( HWND hwnd, XEvent *xev )
+     TRACE( "hwnd %p/%lx pos %d,%d is_hint %d serial %lu\n",
+            hwnd, event->window, event->x, event->y, event->is_hint, event->serial );
+ 
+-    input.u.mi.dx          = event->x;
+-    input.u.mi.dy          = event->y;
++    fill_input( hwnd, (XButtonEvent*)event, &input );
+     input.u.mi.mouseData   = 0;
+     input.u.mi.dwFlags     = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
+-    input.u.mi.dwExtraInfo = 0;
+ 
+-    if (!hwnd && is_old_motion_event( event->serial ))
++    if (!hwnd && !is_gl_fullscreen_window( event->window ))
+     {
+         TRACE( "pos %d,%d old serial %lu, ignoring\n", input.u.mi.dx, input.u.mi.dy, event->serial );
+         return;
+@@ -1614,12 +1671,9 @@ void X11DRV_EnterNotify( HWND hwnd, XEvent *xev )
+     if (event->window == x11drv_thread_data()->grab_window) return;
+ 
+     /* simulate a mouse motion event */
+-    input.u.mi.dx          = event->x;
+-    input.u.mi.dy          = event->y;
++    fill_input( hwnd, (XButtonEvent*)event, &input );
+     input.u.mi.mouseData   = 0;
+     input.u.mi.dwFlags     = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+-    input.u.mi.time        = EVENT_x11_time_to_win32_time( event->time );
+-    input.u.mi.dwExtraInfo = 0;
+ 
+     if (is_old_motion_event( event->serial ))
+     {
+diff --git a/dlls/winex11.drv/opengl.c b/dlls/winex11.drv/opengl.c
+index 3d0bd24..1611ab7 100644
+--- a/dlls/winex11.drv/opengl.c
++++ b/dlls/winex11.drv/opengl.c
+@@ -42,6 +42,7 @@
+ #include "winternl.h"
+ #include "wine/library.h"
+ #include "wine/debug.h"
++#include "mwm.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(wgl);
+ 
+@@ -237,13 +238,25 @@ struct wgl_pbuffer
+     int        texture_level;
+ };
+ 
++struct wgl_surface
++{
++    struct list                     entry;
++    LONG                            refs;
++    HWND                            hwnd;
++    HWND                            proxy_window;
++    Display                        *display;
++    struct gl_drawable             *gl;
++};
++
+ enum dc_gl_type
+ {
+-    DC_GL_NONE,       /* no GL support (pixel format not set yet) */
+-    DC_GL_WINDOW,     /* normal top-level window */
+-    DC_GL_CHILD_WIN,  /* child window using XComposite */
+-    DC_GL_PIXMAP_WIN, /* child window using intermediate pixmap */
+-    DC_GL_PBUFFER     /* pseudo memory DC using a PBuffer */
++    DC_GL_NONE,             /* no GL support (pixel format not set yet) */
++    DC_GL_WINDOW,           /* normal top-level window */
++    DC_GL_CHILD_WIN,        /* child window using XComposite */
++    DC_GL_PIXMAP_WIN,       /* child window using intermediate pixmap */
++    DC_GL_PBUFFER,          /* pseudo memory DC using a PBuffer */
++    DC_GL_SURFACE_WIN,      /* top-level window for a surface */
++    DC_GL_FULLSCREEN_WIN,   /* window for a full-screen surface */
+ };
+ 
+ struct gl_drawable
+@@ -257,6 +270,7 @@ struct gl_drawable
+     RECT                           rect;         /* drawable rect, relative to whole window drawable */
+     int                            swap_interval;
+     BOOL                           refresh_swap_interval;
++    struct wgl_surface            *surface;
+ };
+ 
+ enum glx_swap_control_method
+@@ -271,8 +285,11 @@ enum glx_swap_control_method
+ static XContext gl_hwnd_context;
+ /* X context to associate a struct gl_drawable to a pbuffer hdc */
+ static XContext gl_pbuffer_context;
++/* X context to associate a struct wgl_surface to a surface hdc */
++static XContext surface_dc_context;
+ 
+ static struct list context_list = LIST_INIT( context_list );
++static struct list surface_list = LIST_INIT( surface_list );
+ static struct WineGLInfo WineGLInfo = { 0 };
+ static struct wgl_pixel_format *pixel_formats;
+ static int nb_pixel_formats, nb_onscreen_formats;
+@@ -670,6 +687,7 @@ static BOOL has_opengl(void)
+     }
+     gl_hwnd_context = XUniqueContext();
+     gl_pbuffer_context = XUniqueContext();
++    surface_dc_context = XUniqueContext();
+ 
+     /* In case of GLX you have direct and indirect rendering. Most of the time direct rendering is used
+      * as in general only that is hardware accelerated. In some cases like in case of remote X indirect
+@@ -1245,9 +1263,11 @@ static BOOL set_swap_interval(Drawable drawable, int interval)
+ 
+ static struct gl_drawable *get_gl_drawable( HWND hwnd, HDC hdc )
+ {
++    struct wgl_surface *surface;
+     struct gl_drawable *gl;
+ 
+     EnterCriticalSection( &context_section );
++    if (hdc && !XFindContext( gdi_display, (XID)hdc, surface_dc_context, (char **)&surface )) return surface->gl;
+     if (hwnd && !XFindContext( gdi_display, (XID)hwnd, gl_hwnd_context, (char **)&gl )) return gl;
+     if (hdc && !XFindContext( gdi_display, (XID)hdc, gl_pbuffer_context, (char **)&gl )) return gl;
+     LeaveCriticalSection( &context_section );
+@@ -1280,13 +1300,16 @@ static GLXContext create_glxcontext(Display *display, struct wgl_context *contex
+ 
+ 
+ /***********************************************************************
+- *              free_gl_drawable
++ *              free_gl_drawable_resources
+  */
+-static void free_gl_drawable( struct gl_drawable *gl )
++static void free_gl_drawable_resources( struct gl_drawable *gl )
+ {
++    struct x11drv_win_data *data;
++
+     switch (gl->type)
+     {
+     case DC_GL_CHILD_WIN:
++        TRACE("DC_GL_CHILD_WIN: XDestroyWindow(%lx)\n", gl->drawable);
+         XDestroyWindow( gdi_display, gl->drawable );
+         XFreeColormap( gdi_display, gl->colormap );
+         break;
+@@ -1294,9 +1317,39 @@ static void free_gl_drawable( struct gl_drawable *gl )
+         pglXDestroyGLXPixmap( gdi_display, gl->drawable );
+         XFreePixmap( gdi_display, gl->pixmap );
+         break;
++    case DC_GL_SURFACE_WIN:
++        if ((data = get_win_data( gl->surface->hwnd )))
++        {
++            TRACE("DC_GL_SURFACE_WIN calling destroy_client_window(%lx)\n", gl->drawable);
++            destroy_client_window( data, gl->drawable );
++            release_win_data( data );
++        }
++        break;
++    case DC_GL_FULLSCREEN_WIN:
++        if (gl->drawable)
++        {
++            TRACE("DC_GL_FULLSCREEN_WIN: XDestroyWindow(%lx)\n", gl->drawable);
++            XDestroyWindow( gl->surface->display, gl->drawable );
++        }
++        XFreeColormap( gl->surface->display, gl->colormap );
++        break;
+     default:
+         break;
+     }
++
++    gl->type = DC_GL_NONE;
++    gl->drawable = None;
++    gl->colormap = None;
++    gl->pixmap = None;
++}
++
++
++/***********************************************************************
++ *              free_gl_drawable
++ */
++static void free_gl_drawable( struct gl_drawable *gl )
++{
++    free_gl_drawable_resources( gl );
+     if (gl->visual) XFree( gl->visual );
+     HeapFree( GetProcessHeap(), 0, gl );
+ }
+@@ -1315,11 +1368,131 @@ static BOOL create_gl_drawable( HWND hwnd, struct gl_drawable *gl )
+ 
+         if (data)
+         {
+-            gl->type = DC_GL_WINDOW;
++            gl->type = gl->surface ? DC_GL_SURFACE_WIN : DC_GL_WINDOW;
+             gl->drawable = create_client_window( data, gl->visual );
+             release_win_data( data );
+         }
+     }
++    else if (!hwnd && gl->surface)
++    {
++        struct x11drv_win_data *data;
++        XSetWindowAttributes attr;
++        POINT pos = virtual_screen_to_root( 0, 0 );
++        RECT primary_rect = get_primary_monitor_rect();
++        XSizeHints* size_hints;
++        MwmHints mwm_hints;
++        XWMHints *wm_hints;
++        Atom window_type;
++        WCHAR text[1024];
++
++        gl->type = DC_GL_FULLSCREEN_WIN;
++        gl->colormap = XCreateColormap( gl->surface->display, root_window, gl->visual->visual,
++                                        (gl->visual->class == PseudoColor ||
++                                         gl->visual->class == GrayScale ||
++                                         gl->visual->class == DirectColor) ? AllocAll : AllocNone );
++
++        attr.override_redirect  = !managed_mode;
++        attr.colormap           = gl->colormap;
++        attr.bit_gravity        = NorthWestGravity;
++        attr.win_gravity        = NorthWestGravity;
++        attr.backing_store      = NotUseful;
++        attr.border_pixel       = 0;
++        attr.event_mask         = PointerMotionMask | ButtonPressMask | ButtonReleaseMask | EnterWindowMask |
++                                  KeyPressMask | KeyReleaseMask | FocusChangeMask |
++                                  KeymapStateMask | StructureNotifyMask;
++        if (managed_mode) attr.event_mask |= PropertyChangeMask;
++
++        gl->drawable = XCreateWindow( gl->surface->display, root_window, pos.x, pos.y, primary_rect.right - primary_rect.left,
++                                      primary_rect.bottom - primary_rect.top, 0, gl->visual->depth, InputOutput,
++                                      gl->visual->visual, CWOverrideRedirect | CWColormap | CWBitGravity |
++                                      CWWinGravity | CWBackingStore | CWBorderPixel | CWEventMask, &attr );
++        if (!gl->drawable)
++        {
++            XFreeColormap( gl->surface->display, gl->colormap );
++            goto done;
++        }
++
++        set_initial_wm_hints( gl->surface->display, gl->drawable );
++
++        if ((size_hints = XAllocSizeHints()))
++        {
++            size_hints->win_gravity = StaticGravity;
++            size_hints->flags |= PWinGravity;
++
++            size_hints->x = pos.x;
++            size_hints->y = pos.y;
++            size_hints->flags |= PPosition;
++
++            XSetWMNormalHints( gl->surface->display, gl->drawable, size_hints );
++            XFree( size_hints );
++        }
++
++        mwm_hints.decorations = 0;
++        mwm_hints.functions = MWM_FUNC_MOVE | MWM_FUNC_RESIZE;
++        mwm_hints.flags = MWM_HINTS_FUNCTIONS | MWM_HINTS_DECORATIONS;
++        XChangeProperty( gl->surface->display, gl->drawable, x11drv_atom(_MOTIF_WM_HINTS),
++                         x11drv_atom(_MOTIF_WM_HINTS), 32, PropModeReplace,
++                         (unsigned char*)&mwm_hints, sizeof(mwm_hints)/sizeof(long) );
++
++        window_type = x11drv_atom(_NET_WM_WINDOW_TYPE_NORMAL);
++        XChangeProperty( gl->surface->display, gl->drawable, x11drv_atom(_NET_WM_WINDOW_TYPE),
++                         XA_ATOM, 32, PropModeReplace, (unsigned char*)&window_type, 1 );
++
++        data = get_win_data( gl->surface->proxy_window );
++
++        if ((wm_hints = XAllocWMHints()))
++        {
++            wm_hints->flags = InputHint | StateHint | WindowGroupHint;
++            wm_hints->input = !use_take_focus;
++            wm_hints->initial_state = NormalState;
++            wm_hints->window_group = X11DRV_get_whole_window( gl->surface->proxy_window );
++            if (!wm_hints->window_group)
++                wm_hints->window_group = gl->drawable;
++            if (data && data->icon_pixmap)
++            {
++                wm_hints->icon_pixmap = data->icon_pixmap;
++                wm_hints->icon_mask = data->icon_mask;
++                wm_hints->flags |= IconPixmapHint | IconMaskHint;
++            }
++            XSetWMHints( gl->surface->display, gl->drawable, wm_hints );
++            XFree( wm_hints );
++        }
++
++        if (data && data->icon_bits)
++            XChangeProperty( gl->surface->display, gl->drawable, x11drv_atom(_NET_WM_ICON),
++                             XA_CARDINAL, 32, PropModeReplace,
++                             (unsigned char *)data->icon_bits, data->icon_size );
++
++        release_win_data( data );
++
++        if (managed_mode)
++        {
++            Atom atoms[2];
++
++            atoms[0] = x11drv_atom(_NET_WM_STATE_FULLSCREEN);
++            atoms[1] = x11drv_atom(_NET_WM_STATE_ABOVE);
++            XChangeProperty( gl->surface->display, gl->drawable, x11drv_atom(_NET_WM_STATE), XA_ATOM,
++                             32, PropModeReplace, (unsigned char *)atoms, 2 );
++        }
++
++        if (fullscreen_bypass_compositor)
++        {
++            CARD32 value = 1; /* request bypass */
++            XChangeProperty( gl->surface->display, gl->drawable, x11drv_atom(_NET_WM_BYPASS_COMPOSITOR),
++                             XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&value, 1 );
++        }
++
++        if (!InternalGetWindowText( gl->surface->proxy_window, text, sizeof(text)/sizeof(WCHAR) )) text[0] = 0;
++        sync_window_text( gl->surface->display, gl->drawable, text );
++
++        XSelectInput( gl->surface->display, root_window, StructureNotifyMask );
++
++        TRACE("XMapWindow(%lx)\n", gl->drawable);
++        XMapWindow( gl->surface->display, gl->drawable );
++
++        XFlush( gl->surface->display );
++        sync_window_cursor( gl->drawable );
++    }
+ #ifdef SONAME_LIBXCOMPOSITE
+     else if(usexcomposite)
+     {
+@@ -1369,8 +1542,11 @@ static BOOL create_gl_drawable( HWND hwnd, struct gl_drawable *gl )
+         }
+     }
+ 
++done:
+     if (gl->drawable)
+         gl->refresh_swap_interval = TRUE;
++    else
++        gl->type = DC_GL_NONE;
+     return gl->drawable != 0;
+ }
+ 
+@@ -1381,6 +1557,7 @@ static BOOL create_gl_drawable( HWND hwnd, struct gl_drawable *gl )
+ static BOOL set_win_format( HWND hwnd, const struct wgl_pixel_format *format )
+ {
+     struct gl_drawable *gl, *prev;
++    BOOL had_format = FALSE;
+ 
+     gl = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*gl) );
+     /* Default GLX and WGL swap interval is 1, but in case of glXSwapIntervalSGI
+@@ -1415,13 +1592,53 @@ static BOOL set_win_format( HWND hwnd, const struct wgl_pixel_format *format )
+     EnterCriticalSection( &context_section );
+     if (!XFindContext( gdi_display, (XID)hwnd, gl_hwnd_context, (char **)&prev ))
+     {
++        struct x11drv_win_data *data;
++
++        had_format = TRUE;
+         gl->swap_interval = prev->swap_interval;
++        if (prev->type == DC_GL_WINDOW && (data = get_win_data( hwnd )))
++        {
++            TRACE("calling destroy_client_window(%lx) for previous client window for hwnd %p\n", gl->drawable, hwnd);
++            destroy_client_window( data, prev->drawable );
++            release_win_data( data );
++        }
++        TRACE("calling free_gl_drawable() for previous gl_drawable\n");
+         free_gl_drawable( prev );
+     }
+     XSaveContext( gdi_display, (XID)hwnd, gl_hwnd_context, (char *)gl );
+     LeaveCriticalSection( &context_section );
+ 
+-    __wine_set_pixel_format( hwnd, pixel_format_index( format ));
++    if (!had_format) __wine_track_gl_surfaces( hwnd, 1 );
++    return TRUE;
++}
++
++
++/***********************************************************************
++ *              set_surface_format
++ */
++static BOOL set_surface_format( struct gl_drawable *gl, const struct wgl_pixel_format *format )
++{
++    TRACE("calling free_gl_drawable_resources() to clear previous drawable\n");
++    free_gl_drawable_resources( gl );
++    if (gl->visual) XFree( gl->visual );
++
++    gl->visual = pglXGetVisualFromFBConfig( gdi_display, format->fbconfig );
++    if (!gl->visual)
++        return FALSE;
++
++    if (!create_gl_drawable( gl->surface->hwnd, gl ))
++    {
++        XFree( gl->visual );
++        gl->visual = NULL;
++        return FALSE;
++    }
++    gl->format = format;
++
++    TRACE( "created GL drawable %lx for %s surface %p format %x\n", gl->drawable,
++           gl->surface->hwnd ? "window" : "full-screen", gl->surface, format->fmt_id );
++
++    XFlush( gdi_display );
++
+     return TRUE;
+ }
+ 
+@@ -1431,50 +1648,66 @@ static BOOL set_pixel_format(HDC hdc, int format, BOOL allow_change)
+     const struct wgl_pixel_format *fmt;
+     int value;
+     HWND hwnd = WindowFromDC( hdc );
++    struct gl_drawable *gl;
++    BOOL ret = FALSE;
+ 
+     TRACE("(%p,%d)\n", hdc, format);
+ 
+-    if (!hwnd || hwnd == GetDesktopWindow())
++    if (hwnd == GetDesktopWindow())
+     {
+         WARN( "not a valid window DC %p/%p\n", hdc, hwnd );
+         return FALSE;
+     }
+ 
++    gl = get_gl_drawable( hwnd, hdc );
++    if (!(gl && gl->surface) && !hwnd)
++    {
++        WARN( "not a valid window or surface DC %p/%p\n", hdc, hwnd );
++        goto done;
++    }
++
+     fmt = get_pixel_format(gdi_display, format, FALSE /* Offscreen */);
+     if (!fmt)
+     {
+         ERR( "Invalid format %d\n", format );
+-        return FALSE;
++        goto done;
+     }
+ 
+     pglXGetFBConfigAttrib(gdi_display, fmt->fbconfig, GLX_DRAWABLE_TYPE, &value);
+     if (!(value & GLX_WINDOW_BIT))
+     {
+         WARN( "Pixel format %d is not compatible for window rendering\n", format );
+-        return FALSE;
++        goto done;
+     }
+ 
+-    if (!allow_change)
++    /* The gl_drawable for a surface exists before it has a format, so the mere
++       fact that we found one isn't sufficient to know it's already been set. */
++    if (!allow_change && gl && (!gl->surface || gl->format))
+     {
+-        struct gl_drawable *gl;
+-        if ((gl = get_gl_drawable( hwnd, hdc )))
+-        {
+-            int prev = pixel_format_index( gl->format );
+-            release_gl_drawable( gl );
+-            return prev == format;  /* cannot change it if already set */
+-        }
++        /* cannot change it if already set */
++        ret = pixel_format_index( gl->format ) == format;
++        goto done;
++    }
++
++    if (gl && gl->surface)
++        ret = set_surface_format( gl, fmt );
++    else
++    {
++        release_gl_drawable( gl );
++        return set_win_format( hwnd, fmt );
+     }
+ 
+-    return set_win_format( hwnd, fmt );
++done:
++    release_gl_drawable( gl );
++    return ret;
+ }
+ 
+ 
+ /***********************************************************************
+- *              sync_gl_drawable
++ *              sync_gl_drawable_internal
+  */
+-void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_rect )
++static void sync_gl_drawable_internal( struct gl_drawable *gl, const RECT *visible_rect, const RECT *client_rect )
+ {
+-    struct gl_drawable *gl;
+     Drawable glxp;
+     Pixmap pix;
+     int mask = 0;
+@@ -1483,8 +1716,6 @@ void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_r
+     changes.width  = min( max( 1, client_rect->right - client_rect->left ), 65535 );
+     changes.height = min( max( 1, client_rect->bottom - client_rect->top ), 65535 );
+ 
+-    if (!(gl = get_gl_drawable( hwnd, 0 ))) return;
+-
+     if (changes.width  != gl->rect.right - gl->rect.left) mask |= CWWidth;
+     if (changes.height != gl->rect.bottom - gl->rect.top) mask |= CWHeight;
+ 
+@@ -1498,12 +1729,12 @@ void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_r
+     case DC_GL_PIXMAP_WIN:
+         if (!mask) break;
+         pix = XCreatePixmap(gdi_display, root_window, changes.width, changes.height, gl->visual->depth);
+-        if (!pix) goto done;
++        if (!pix) return;
+         glxp = pglXCreateGLXPixmap(gdi_display, gl->visual, pix);
+         if (!glxp)
+         {
+             XFreePixmap(gdi_display, pix);
+-            goto done;
++            return;
+         }
+         mark_drawable_dirty(gl->drawable, glxp);
+         XFlush( gdi_display );
+@@ -1519,56 +1750,188 @@ void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_r
+         break;
+     }
+     SetRect( &gl->rect, 0, 0, changes.width, changes.height );
+-done:
+-    release_gl_drawable( gl );
+ }
+ 
+-
+ /***********************************************************************
+- *              set_gl_drawable_parent
++ *              sync_gl_drawable
+  */
+-void set_gl_drawable_parent( HWND hwnd, HWND parent )
++void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_rect )
+ {
+     struct gl_drawable *gl;
+-    Drawable old_drawable;
++    struct wgl_surface *surface;
+ 
+-    if (!(gl = get_gl_drawable( hwnd, 0 ))) return;
++    if ((gl = get_gl_drawable( hwnd, 0 )))
++    {
++        sync_gl_drawable_internal( gl, visible_rect, client_rect );
++        release_gl_drawable( gl );
++    }
++
++    EnterCriticalSection( &context_section );
++    LIST_FOR_EACH_ENTRY( surface, &surface_list, struct wgl_surface, entry )
++    {
++        if (surface->hwnd == hwnd && surface->gl->drawable)
++            sync_gl_drawable_internal( surface->gl, visible_rect, client_rect );
++    }
++    LeaveCriticalSection( &context_section );
++}
++
++
++/***********************************************************************
++ *              set_gl_drawable_parent_internal
++ */
++static BOOL set_gl_drawable_parent_internal( HWND hwnd, struct gl_drawable *gl, HWND parent )
++{
++    Drawable old_drawable;
+ 
+     TRACE( "setting drawable %lx parent %p\n", gl->drawable, parent );
+ 
+-    old_drawable = gl->drawable;
+     switch (gl->type)
+     {
+     case DC_GL_WINDOW:
++    case DC_GL_SURFACE_WIN:
+         break;
+     case DC_GL_CHILD_WIN:
+-        if (parent != GetDesktopWindow()) goto done;
+-        XDestroyWindow( gdi_display, gl->drawable );
+-        XFreeColormap( gdi_display, gl->colormap );
+-        break;
+     case DC_GL_PIXMAP_WIN:
+-        if (parent != GetDesktopWindow()) goto done;
+-        pglXDestroyGLXPixmap( gdi_display, gl->drawable );
+-        XFreePixmap( gdi_display, gl->pixmap );
++        if (parent != GetDesktopWindow()) return TRUE;
+         break;
+     default:
+-        goto done;
++        return TRUE;
+     }
+ 
++    old_drawable = gl->drawable;
++    TRACE("calling free_gl_drawable_resources() for old gl_drawable\n");
++    free_gl_drawable_resources( gl );
+     if (!create_gl_drawable( hwnd, gl ))
++        return FALSE;
++
++    TRACE( "created GL drawable %lx for win %p\n", gl->drawable, hwnd );
++
++    mark_drawable_dirty( old_drawable, gl->drawable );
++
++    return TRUE;
++}
++
++
++/***********************************************************************
++ *              set_gl_drawable_parent
++ */
++void set_gl_drawable_parent( HWND hwnd, HWND parent )
++{
++    struct gl_drawable *gl;
++    struct wgl_surface *surface;
++
++    if ((gl = get_gl_drawable( hwnd, 0 )))
+     {
+-        XDeleteContext( gdi_display, (XID)hwnd, gl_hwnd_context );
+-        release_gl_drawable( gl );
+-        XFree( gl->visual );
+-        HeapFree( GetProcessHeap(), 0, gl );
+-        __wine_set_pixel_format( hwnd, 0 );
++        if (set_gl_drawable_parent_internal( hwnd, gl, parent ))
++            release_gl_drawable( gl );
++        else
++        {
++            XDeleteContext( gdi_display, (XID)hwnd, gl_hwnd_context );
++            release_gl_drawable( gl );
++            XFree( gl->visual );
++            HeapFree( GetProcessHeap(), 0, gl );
++            __wine_track_gl_surfaces( hwnd, -1 );
++        }
++    }
++
++    EnterCriticalSection( &context_section );
++    LIST_FOR_EACH_ENTRY( surface, &surface_list, struct wgl_surface, entry )
++    {
++        if (surface->hwnd == hwnd && surface->gl->drawable)
++            set_gl_drawable_parent_internal( hwnd, surface->gl, parent );
++    }
++    LeaveCriticalSection( &context_section );
++}
++
++
++/***********************************************************************
++ *              sync_gl_fullscreen_text
++ */
++void sync_gl_fullscreen_text( HWND hwnd, LPCWSTR text )
++{
++    struct wgl_surface *surface;
++
++    EnterCriticalSection( &context_section );
++    LIST_FOR_EACH_ENTRY( surface, &surface_list, struct wgl_surface, entry )
++    {
++        if (surface->gl->type == DC_GL_FULLSCREEN_WIN && surface->proxy_window == hwnd)
++            sync_window_text( surface->display, surface->gl->drawable, text );
++    }
++    LeaveCriticalSection( &context_section );
++}
++
++
++/***********************************************************************
++ *              sync_gl_fullscreen_icon
++ */
++void sync_gl_fullscreen_icon( HWND hwnd )
++{
++    XWMHints *wm_hints;
++    struct x11drv_win_data *data;
++
++    if (!(wm_hints = XAllocWMHints()))
+         return;
++    wm_hints->flags = IconPixmapHint | IconMaskHint;
++
++    EnterCriticalSection( &context_section );
++    if ((data = get_win_data( hwnd )))
++    {
++        struct wgl_surface *surface;
++
++        LIST_FOR_EACH_ENTRY( surface, &surface_list, struct wgl_surface, entry )
++        {
++            if (surface->hwnd == hwnd && surface->gl->drawable)
++            {
++                if (data->icon_pixmap)
++                {
++                    wm_hints->icon_pixmap = data->icon_pixmap;
++                    wm_hints->icon_mask = data->icon_mask;
++                    XSetWMHints( surface->display, surface->gl->drawable, wm_hints );
++                }
++
++                if (data->icon_bits)
++                    XChangeProperty( surface->display, surface->gl->drawable, x11drv_atom(_NET_WM_ICON),
++                                     XA_CARDINAL, 32, PropModeReplace,
++                                     (unsigned char *)data->icon_bits, data->icon_size );
++                else
++                    XDeleteProperty( surface->display, surface->gl->drawable, x11drv_atom(_NET_WM_ICON) );
++            }
++        }
++
++        release_win_data( data );
+     }
+-    mark_drawable_dirty( old_drawable, gl->drawable );
++    LeaveCriticalSection( &context_section );
+ 
+-done:
+-    release_gl_drawable( gl );
++    XFree( wm_hints );
++}
+ 
++
++/***********************************************************************
++ *              sync_gl_fullscreen_to_desktop
++ */
++void sync_gl_fullscreen_to_desktop(unsigned int width, unsigned int height)
++{
++    POINT pos = virtual_screen_to_root(0, 0);
++    XWindowChanges changes;
++    struct wgl_surface *surface;
++
++    changes.x = pos.x;
++    changes.y = pos.y;
++    changes.width = width;
++    changes.height = height;
++
++    EnterCriticalSection(&context_section);
++    LIST_FOR_EACH_ENTRY(surface, &surface_list, struct wgl_surface, entry)
++    {
++        if (surface->gl->type == DC_GL_FULLSCREEN_WIN)
++        {
++            TRACE("moving full-screen surface/window %p/%lx to (%d,%d) %dx%d\n",
++                  surface, surface->gl->drawable, changes.x, changes.y, changes.width, changes.height);
++            XReconfigureWMWindow(surface->display, surface->gl->drawable, DefaultScreen(surface->display),
++                                 CWX | CWY | CWWidth | CWHeight, &changes);
++        }
++    }
++    LeaveCriticalSection(&context_section);
+ }
+ 
+ 
+@@ -1578,17 +1941,462 @@ done:
+ void destroy_gl_drawable( HWND hwnd )
+ {
+     struct gl_drawable *gl;
++    struct wgl_surface *surface;
+ 
+     EnterCriticalSection( &context_section );
+     if (!XFindContext( gdi_display, (XID)hwnd, gl_hwnd_context, (char **)&gl ))
+     {
+         XDeleteContext( gdi_display, (XID)hwnd, gl_hwnd_context );
++        TRACE("calling free_gl_drawable() for window gl_drawable for hwnd %p\n", hwnd);
+         free_gl_drawable( gl );
+     }
++
++    LIST_FOR_EACH_ENTRY( surface, &surface_list, struct wgl_surface, entry )
++    {
++        if (surface->hwnd == hwnd)
++        {
++            TRACE("calling free_gl_drawable_resources() for surface gl_drawable for hwnd %p\n", hwnd);
++            free_gl_drawable_resources( surface->gl );
++        }
++        if (surface->proxy_window == hwnd)
++            surface->proxy_window = NULL;
++    }
+     LeaveCriticalSection( &context_section );
+ }
+ 
+ 
++/**********************************************************************
++ *              release_surface
++ */
++static void release_surface(struct wgl_surface *surface)
++{
++    if (!surface) return;
++
++    EnterCriticalSection(&context_section);
++
++    if (--surface->refs > 0)
++    {
++        LeaveCriticalSection(&context_section);
++        return;
++    }
++
++    list_remove(&surface->entry);
++    TRACE("calling free_gl_drawable() for surface gl_drawable\n");
++    free_gl_drawable(surface->gl);
++
++    LeaveCriticalSection(&context_section);
++
++    if (surface->hwnd && IsWindow(surface->hwnd))
++        __wine_track_gl_surfaces(surface->hwnd, -1);
++
++    HeapFree(GetProcessHeap(), 0, surface);
++}
++
++
++/**********************************************************************
++ *              gl_has_fullscreen_windows
++ */
++BOOL gl_has_fullscreen_windows(void)
++{
++    struct wgl_surface *surface;
++    BOOL ret = FALSE;
++
++    EnterCriticalSection(&context_section);
++    LIST_FOR_EACH_ENTRY(surface, &surface_list, struct wgl_surface, entry)
++    {
++        if (surface->gl->type == DC_GL_FULLSCREEN_WIN)
++        {
++            ret = TRUE;
++            break;
++        }
++    }
++    LeaveCriticalSection(&context_section);
++
++    return ret;
++}
++
++
++/**********************************************************************
++ *              surface_for_xwindow
++ *
++ * Caller must hold context_section.
++ */
++static struct wgl_surface* surface_for_xwindow(Window window)
++{
++    struct wgl_surface *surface;
++
++    LIST_FOR_EACH_ENTRY(surface, &surface_list, struct wgl_surface, entry)
++    {
++        if (surface->gl->drawable == window)
++            return surface;
++    }
++
++    return NULL;
++}
++
++
++/**********************************************************************
++ *              is_gl_fullscreen_window
++ */
++BOOL is_gl_fullscreen_window(Window window)
++{
++    BOOL ret = FALSE;
++
++    if (!window || window == root_window) return FALSE;
++
++    EnterCriticalSection(&context_section);
++    ret = (surface_for_xwindow(window) != NULL);
++    LeaveCriticalSection(&context_section);
++
++    return ret;
++}
++
++
++/**********************************************************************
++ *              gl_cursor_window_for_fullscreen
++ */
++HWND gl_cursor_window_for_fullscreen(Window window)
++{
++    struct wgl_surface *surface;
++    HWND ret = NULL;
++
++    EnterCriticalSection(&context_section);
++    if ((surface = surface_for_xwindow(window)))
++        ret = surface->proxy_window;
++    LeaveCriticalSection(&context_section);
++
++    return ret;
++}
++
++
++/**********************************************************************
++ *              gl_fullscreen_for_cursor_window
++ */
++Window gl_fullscreen_for_cursor_window(HWND hwnd)
++{
++    struct wgl_surface *surface;
++    Window ret = None;
++
++    EnterCriticalSection(&context_section);
++    LIST_FOR_EACH_ENTRY(surface, &surface_list, struct wgl_surface, entry)
++    {
++        if (surface->gl->type == DC_GL_FULLSCREEN_WIN && surface->proxy_window == hwnd)
++        {
++            ret = surface->gl->drawable;
++            break;
++        }
++    }
++    LeaveCriticalSection(&context_section);
++
++    return ret;
++}
++
++
++/**********************************************************************
++ *              activate_window
++ */
++static void activate_window(Display *display, Window window, Window current)
++{
++    Time time;
++    XWindowChanges changes;
++
++    if (EVENT_x11_time_to_win32_time(0))
++        time = GetMessageTime() - EVENT_x11_time_to_win32_time(0);
++    else
++        time = CurrentTime;
++
++    if (managed_mode)
++    {
++        XEvent xev;
++
++        xev.xclient.type = ClientMessage;
++        xev.xclient.window = window;
++        xev.xclient.message_type = x11drv_atom(_NET_ACTIVE_WINDOW);
++        xev.xclient.serial = 0;
++        xev.xclient.display = display;
++        xev.xclient.send_event = True;
++        xev.xclient.format = 32;
++        xev.xclient.data.l[0] = 1;
++        xev.xclient.data.l[1] = time;
++        xev.xclient.data.l[2] = current;
++        xev.xclient.data.l[3] = 0;
++
++        XSendEvent(display, root_window, False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
++    }
++
++    TRACE("XSetInputFocus(%lx)\n", window);
++    XSetInputFocus(display, window, RevertToParent, time);
++
++    changes.stack_mode = Above;
++    TRACE("XReconfigureWMWindow(%lx, CWStackMode, Above)\n", window);
++    XReconfigureWMWindow(display, window, DefaultScreen(display), CWStackMode, &changes);
++}
++
++
++/**********************************************************************
++ *              gl_handle_event
++ *
++ * Returns TRUE if the event was handled and nothing more should be
++ * done with it.  FALSE if normal event processing should proceed.
++ */
++BOOL gl_handle_event(Display *display, XEvent *xev)
++{
++    struct wgl_surface *surface;
++
++    switch (xev->type)
++    {
++        case ClientMessage:
++            if (xev->xclient.format == 32 && xev->xclient.message_type == x11drv_atom(WM_PROTOCOLS) &&
++                (Atom)xev->xclient.data.l[0] == x11drv_atom(WM_TAKE_FOCUS))
++            {
++                HWND hwnd, proxy;
++                Window fullscreen = None;
++                BOOL found = FALSE;
++
++                if (XFindContext(display, xev->xclient.window, winContext, (char **)&hwnd))
++                    hwnd = 0;
++                if (!hwnd && xev->xclient.window == root_window)
++                    hwnd = GetDesktopWindow();
++
++                EnterCriticalSection(&context_section);
++                /* Search from the end to find the most recently added matching surface. */
++                LIST_FOR_EACH_ENTRY_REV(surface, &surface_list, struct wgl_surface, entry)
++                {
++                    if (surface->gl->type == DC_GL_FULLSCREEN_WIN)
++                    {
++                        if (!fullscreen && surface->proxy_window == hwnd)
++                            fullscreen = surface->gl->drawable;
++                        if (!found && surface->gl->drawable == xev->xclient.window)
++                        {
++                            found = TRUE;
++                            proxy = surface->proxy_window;
++                        }
++                        if (fullscreen && found)
++                            break;
++                    }
++                }
++                LeaveCriticalSection(&context_section);
++
++                if (found)
++                {
++                    TRACE("WM_TAKE_FOCUS for full-screen window %lx; accepting but setting win32 focus to hwnd %p\n",
++                          xev->xclient.window, proxy);
++                    handle_wm_protocols(proxy, &xev->xclient);
++                    TRACE("activate_window(%lx)\n", xev->xclient.window);
++                    activate_window(display, xev->xclient.window, X11DRV_get_whole_window(proxy));
++                    return TRUE;
++                }
++                else if (fullscreen)
++                {
++                    TRACE("WM_TAKE_FOCUS for window %lx; setting focus on full-screen window %lx instead\n",
++                          xev->xclient.window, fullscreen);
++                    handle_wm_protocols(hwnd, &xev->xclient);
++                    TRACE("XSetInputFocus(%lx)\n", xev->xclient.window);
++                    XSetInputFocus(display, xev->xclient.window, RevertToParent, (Time)xev->xclient.data.l[1]);
++                    TRACE("activate_window(%lx)\n", fullscreen);
++                    activate_window(display, fullscreen, xev->xclient.window);
++                    return TRUE;
++                }
++            }
++            break;
++        case ConfigureNotify:
++            if (xev->xconfigure.window == root_window)
++            {
++                RECT primary_rect = get_primary_monitor_rect();
++
++                TRACE("root window ConfigureNotify; repositioning all full-screen surface windows\n");
++                sync_gl_fullscreen_to_desktop(primary_rect.right - primary_rect.left, primary_rect.bottom - primary_rect.top);
++            }
++            break;
++        case DestroyNotify:
++            EnterCriticalSection(&context_section);
++            if ((surface = surface_for_xwindow(xev->xdestroywindow.window)))
++            {
++                WARN("full-screen surface/window %p/%lx destroyed\n", surface, surface->gl->drawable);
++                surface->gl->drawable = None; /* Already destroyed */
++                TRACE("DestroyNotify: calling free_gl_drawable_resources() for full-screen window %lx\n", xev->xdestroywindow.window);
++                free_gl_drawable_resources(surface->gl);
++            }
++            LeaveCriticalSection(&context_section);
++            break;
++        case FocusIn:
++        {
++            HWND hwnd, proxy;
++            Window fullscreen = None;
++            BOOL found = FALSE;
++
++            if (xev->xfocus.detail == NotifyPointer) break;
++
++            if (XFindContext(display, xev->xfocus.window, winContext, (char **)&hwnd))
++                hwnd = 0;
++            if (!hwnd && xev->xfocus.window == root_window)
++                hwnd = GetDesktopWindow();
++
++            EnterCriticalSection(&context_section);
++            /* Search from the end to find the most recently added matching surface. */
++            LIST_FOR_EACH_ENTRY_REV(surface, &surface_list, struct wgl_surface, entry)
++            {
++                if (surface->gl->type == DC_GL_FULLSCREEN_WIN)
++                {
++                    if (!fullscreen && surface->proxy_window == hwnd)
++                        fullscreen = surface->gl->drawable;
++                    if (!found && surface->gl->drawable == xev->xfocus.window)
++                    {
++                        found = TRUE;
++                        proxy = surface->proxy_window;
++                    }
++                    if (fullscreen && found)
++                        break;
++                }
++            }
++            LeaveCriticalSection(&context_section);
++
++            if (found)
++            {
++                BOOL set_foreground = FALSE;
++                XIC xic;
++
++                /* A full-screen window has received the focus.  Set the win32
++                   focus to the proxy window, instead. */
++                if (proxy && can_activate_window(proxy))
++                    set_foreground = TRUE;
++                else if (proxy == GetDesktopWindow())
++                {
++                    proxy = GetForegroundWindow();
++                    if (!proxy) proxy = x11drv_thread_data()->last_focus;
++                    if (!proxy) proxy = GetDesktopWindow();
++                    set_foreground = TRUE;
++                }
++                else
++                {
++                    proxy = GetFocus();
++                    if (proxy) proxy = GetAncestor(proxy, GA_ROOT);
++                    if (!proxy) proxy = GetActiveWindow();
++                    if (!proxy) proxy = x11drv_thread_data()->last_focus;
++                    if (proxy && can_activate_window(proxy))
++                        set_foreground = TRUE;
++                }
++
++                TRACE("FocusIn for full-screen window %lx; setting win32 focus to win %p instead\n",
++                      xev->xfocus.window, proxy);
++
++                if ((xic = X11DRV_get_ic(proxy))) XSetICFocus(xic);
++                clip_fullscreen_window(NULL, FALSE);
++                if (set_foreground)
++                    SetForegroundWindow(proxy);
++                return TRUE;
++            }
++            else if (fullscreen)
++            {
++                /* There's a full-screen window and the focus has been switched
++                   to its proxy.  Switch it to the full-screen window, instead. */
++                TRACE("FocusIn for window %lx; setting focus on full-screen window %lx instead\n",
++                      xev->xfocus.window, fullscreen);
++                TRACE("activate_window(%lx)\n", fullscreen);
++                activate_window(display, fullscreen, xev->xfocus.window);
++            }
++            break;
++        }
++        case FocusOut:
++        {
++            Window focus_win;
++            int revert;
++
++            if (xev->xfocus.detail == NotifyPointer) break;
++            if (ximInComposeMode) break;
++
++            if (XGetInputFocus(display, &focus_win, &revert) != 0)
++                focus_win = None;
++
++            if (is_gl_fullscreen_window(xev->xfocus.window))
++            {
++                /* Full-screen window is losing focus.  If the focus is going to
++                   a Wine window, ignore the change; it will be set back.  Otherwise,
++                   set the win32 focus to the desktop. */
++                HWND hwnd;
++                HWND focus;
++
++                if (focus_win && XFindContext(display, focus_win, winContext, (char **)&hwnd))
++                    focus_win = None;
++                if (focus_win)
++                {
++                    TRACE("FocusOut for full-screen window %lx going to Wine win %p/%lx; ignoring\n",
++                          xev->xfocus.window, hwnd, focus_win);
++                    return TRUE;
++                }
++
++                focus = GetFocus();
++                if (focus) focus = GetAncestor(focus, GA_ROOT);
++                if (!focus) focus = GetActiveWindow();
++                if (!focus) focus = x11drv_thread_data()->last_focus;
++
++                if (focus)
++                    focus_out(display, focus);
++                TRACE("FocusOut for full-screen window %lx; removing focus from hwnd %p\n",
++                      xev->xfocus.window, focus);
++                return TRUE;
++            }
++            else
++            {
++                /* Normal Wine window is losing focus.  If the focus is going to
++                   a full-screen GL window, ignore the change.  The Wine window
++                   should retain win32 focus. */
++                if (is_gl_fullscreen_window(focus_win))
++                {
++                    TRACE("FocusOut for window %lx going to full-screen window %lx; ignoring\n",
++                          xev->xfocus.window, focus_win);
++                    return TRUE;
++                }
++            }
++            break;
++        }
++        case GravityNotify:
++            if (is_gl_fullscreen_window(xev->xgravity.window))
++            {
++                POINT pos = virtual_screen_to_root(0, 0);
++                RECT primary_rect = get_primary_monitor_rect();
++                XWindowChanges changes;
++
++                changes.x = pos.x;
++                changes.y = pos.y;
++                changes.width = primary_rect.right - primary_rect.left;
++                changes.height = primary_rect.bottom - primary_rect.top;
++
++                TRACE("GravityNotify for full-screen window %lx; moving it to (%d,%d) %dx%d\n",
++                      xev->xgravity.window, changes.x, changes.y, changes.width, changes.height);
++                XReconfigureWMWindow(display, xev->xgravity.window, DefaultScreen(display),
++                                     CWX | CWY | CWWidth | CWHeight, &changes);
++            }
++            break;
++        case MapNotify:
++            TRACE("MapNotify for window %lx\n", xev->xmap.window);
++            if (!managed_mode)
++            {
++                HWND proxy;
++
++                EnterCriticalSection(&context_section);
++                if ((surface = surface_for_xwindow(xev->xmap.window)))
++                    proxy = surface->proxy_window;
++                LeaveCriticalSection(&context_section);
++
++                if (surface && proxy == GetForegroundWindow())
++                {
++                    TRACE("MapNotify for surface/window %p/%lx, proxy %p has win32 focus; giving it focus\n",
++                          surface, xev->xmap.window, proxy);
++                    TRACE("activate_window(%lx)\n", xev->xmap.window);
++                    activate_window(display, xev->xmap.window, X11DRV_get_whole_window(proxy));
++                }
++            }
++            break;
++        case UnmapNotify:
++            TRACE("UnmapNotify for window %lx\n", xev->xunmap.window);
++            break;
++    }
++
++    return FALSE;
++}
++
++
+ /**
+  * glxdrv_DescribePixelFormat
+  *
+@@ -1731,14 +2539,14 @@ static int glxdrv_wglGetPixelFormat( HDC hdc )
+     struct gl_drawable *gl;
+     int ret = 0;
+ 
+-    if ((gl = get_gl_drawable( WindowFromDC( hdc ), hdc )))
++    if ((gl = get_gl_drawable( WindowFromDC( hdc ), hdc )) && gl->format)
+     {
+         ret = pixel_format_index( gl->format );
+         /* Offscreen formats can't be used with traditional WGL calls.
+          * As has been verified on Windows GetPixelFormat doesn't fail but returns iPixelFormat=1. */
+         if (!is_onscreen_pixel_format( ret )) ret = 1;
+-        release_gl_drawable( gl );
+     }
++    release_gl_drawable( gl );
+     TRACE( "%p -> %d\n", hdc, ret );
+     return ret;
+ }
+@@ -1772,8 +2580,9 @@ static struct wgl_context *glxdrv_wglCreateContext( HDC hdc )
+     struct wgl_context *ret;
+     struct gl_drawable *gl;
+ 
+-    if (!(gl = get_gl_drawable( WindowFromDC( hdc ), hdc )))
++    if (!(gl = get_gl_drawable( WindowFromDC( hdc ), hdc )) || !gl->format)
+     {
++        release_gl_drawable( gl );
+         SetLastError( ERROR_INVALID_PIXEL_FORMAT );
+         return NULL;
+     }
+@@ -1833,7 +2642,7 @@ static BOOL glxdrv_wglMakeCurrent(HDC hdc, struct wgl_context *ctx)
+         return TRUE;
+     }
+ 
+-    if ((gl = get_gl_drawable( WindowFromDC( hdc ), hdc )))
++    if ((gl = get_gl_drawable( WindowFromDC( hdc ), hdc )) && gl->format)
+     {
+         if (ctx->fmt != gl->format)
+         {
+@@ -1884,7 +2693,7 @@ static BOOL X11DRV_wglMakeContextCurrentARB( HDC draw_hdc, HDC read_hdc, struct
+ 
+     if (!pglXMakeContextCurrent) return FALSE;
+ 
+-    if ((draw_gl = get_gl_drawable( WindowFromDC( draw_hdc ), draw_hdc )))
++    if ((draw_gl = get_gl_drawable( WindowFromDC( draw_hdc ), draw_hdc )) && draw_gl->drawable)
+     {
+         read_gl = get_gl_drawable( WindowFromDC( read_hdc ), read_hdc );
+         ret = pglXMakeContextCurrent(gdi_display, draw_gl->drawable,
+@@ -1962,7 +2771,7 @@ static void wglFinish(void)
+     escape.code = X11DRV_FLUSH_GL_DRAWABLE;
+     escape.gl_drawable = 0;
+ 
+-    if ((gl = get_gl_drawable( WindowFromDC( ctx->hdc ), 0 )))
++    if ((gl = get_gl_drawable( WindowFromDC( ctx->hdc ), ctx->hdc )))
+     {
+         switch (gl->type)
+         {
+@@ -1987,7 +2796,7 @@ static void wglFlush(void)
+     escape.code = X11DRV_FLUSH_GL_DRAWABLE;
+     escape.gl_drawable = 0;
+ 
+-    if ((gl = get_gl_drawable( WindowFromDC( ctx->hdc ), 0 )))
++    if ((gl = get_gl_drawable( WindowFromDC( ctx->hdc ), ctx->hdc )))
+     {
+         switch (gl->type)
+         {
+@@ -2022,8 +2831,9 @@ static struct wgl_context *X11DRV_wglCreateContextAttribsARB( HDC hdc, struct wg
+ 
+     TRACE("(%p %p %p)\n", hdc, hShareContext, attribList);
+ 
+-    if (!(gl = get_gl_drawable( WindowFromDC( hdc ), hdc )))
++    if (!(gl = get_gl_drawable( WindowFromDC( hdc ), hdc )) || !gl->format)
+     {
++        release_gl_drawable( gl );
+         SetLastError( ERROR_INVALID_PIXEL_FORMAT );
+         return NULL;
+     }
+@@ -3021,8 +3831,9 @@ static BOOL X11DRV_wglSwapIntervalEXT(int interval)
+         return FALSE;
+     }
+ 
+-    if (!(gl = get_gl_drawable( WindowFromDC( ctx->hdc ), ctx->hdc )))
++    if (!(gl = get_gl_drawable( WindowFromDC( ctx->hdc ), ctx->hdc )) || !gl->drawable)
+     {
++        release_gl_drawable(gl);
+         SetLastError(ERROR_DC_NOT_FOUND);
+         return FALSE;
+     }
+@@ -3051,6 +3862,144 @@ static BOOL X11DRV_wglSetPixelFormatWINE(HDC hdc, int format)
+ }
+ 
+ /**
++ * X11DRV_wglCreateSurfaceWINE
++ *
++ * WGL_WINE_surface: wglCreateSurfaceWINE
++ */
++static struct wgl_surface *X11DRV_wglCreateSurfaceWINE(HDC hdc, HWND proxy_window)
++{
++    struct wgl_surface* surface;
++
++    TRACE("hdc %p proxy_window %p\n", hdc, proxy_window);
++
++    surface = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*surface));
++    if (!surface)
++    {
++        SetLastError(ERROR_NO_SYSTEM_RESOURCES);
++        return NULL;
++    }
++
++    if (!(surface->gl = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*surface->gl))))
++    {
++        HeapFree(GetProcessHeap(), 0, surface);
++        SetLastError(ERROR_NO_SYSTEM_RESOURCES);
++        return NULL;
++    }
++
++    surface->refs = 1;
++    surface->hwnd = WindowFromDC(hdc);
++    if (surface->hwnd == GetDesktopWindow())
++        surface->hwnd = NULL;
++
++    surface->gl->type = DC_GL_NONE;
++    surface->gl->surface = surface;
++    surface->gl->swap_interval = 1;
++
++    if (surface->hwnd)
++    {
++        GetClientRect( surface->hwnd, &surface->gl->rect );
++        surface->gl->rect.right  = min( max( 1, surface->gl->rect.right ), 65535 );
++        surface->gl->rect.bottom = min( max( 1, surface->gl->rect.bottom ), 65535 );
++
++        __wine_track_gl_surfaces(surface->hwnd, 1);
++    }
++    else
++    {
++        struct x11drv_win_data *data;
++
++        if ((data = get_win_data(proxy_window)))
++        {
++            surface->display = data->display;
++            release_win_data(data);
++        }
++        if (!surface->display)
++        {
++            ERR("proxy window %p of other process not supported\n", proxy_window);
++            HeapFree(GetProcessHeap(), 0, surface->gl);
++            HeapFree(GetProcessHeap(), 0, surface);
++            SetLastError(ERROR_GEN_FAILURE);
++            return NULL;
++        }
++
++        surface->proxy_window = proxy_window;
++    }
++
++    EnterCriticalSection(&context_section);
++    list_add_tail(&surface_list, &surface->entry);
++    LeaveCriticalSection(&context_section);
++
++    TRACE(" -> %p\n", surface);
++    return surface;
++}
++
++/**
++ * X11DRV_wglDestroySurfaceWINE
++ *
++ * WGL_WINE_surface: wglDestroySurfaceWINE
++ */
++static BOOL X11DRV_wglDestroySurfaceWINE(struct wgl_surface *surface)
++{
++    TRACE("surface %p\n", surface);
++
++    release_surface(surface);
++    return GL_TRUE;
++}
++
++/**
++ * X11DRV_wglGetSurfaceDCWINE
++ *
++ * WGL_WINE_surface: wglGetSurfaceDCWINE
++ */
++static HDC X11DRV_wglGetSurfaceDCWINE(struct wgl_surface *surface)
++{
++    HDC hdc;
++    struct wgl_surface *prev;
++
++    hdc = CreateDCA("DISPLAY", NULL, NULL, NULL);
++    if (!hdc) return 0;
++
++    EnterCriticalSection(&context_section);
++    surface->refs++;
++    if (XFindContext(gdi_display, (XID)hdc, surface_dc_context, (char **)&prev))
++        prev = NULL;
++    XSaveContext(gdi_display, (XID)hdc, surface_dc_context, (char *)surface);
++    LeaveCriticalSection(&context_section);
++
++    release_surface(prev);
++
++    TRACE("(%p)->(%p)\n", surface, hdc);
++    return hdc;
++}
++
++/**
++ * X11DRV_wglReleaseSurfaceDCWINE
++ *
++ * WGL_WINE_surface: wglReleaseSurfaceDCWINE
++ */
++static int X11DRV_wglReleaseSurfaceDCWINE(struct wgl_surface *surface, HDC hdc)
++{
++    struct wgl_surface *prev;
++
++    TRACE("(%p, %p)\n", surface, hdc);
++
++    EnterCriticalSection(&context_section);
++
++    if (!XFindContext(gdi_display, (XID)hdc, surface_dc_context, (char **)&prev))
++        XDeleteContext(gdi_display, (XID)hdc, surface_dc_context);
++    else
++    {
++        prev = NULL;
++        hdc = 0;
++    }
++
++    LeaveCriticalSection(&context_section);
++
++    release_surface(prev);
++
++    return hdc && DeleteDC(hdc);
++}
++
++/**
+  * glxRequireVersion (internal)
+  *
+  * Check if the supported GLX version matches requiredVersion.
+@@ -3195,6 +4144,12 @@ static void X11DRV_WineGL_LoadExtensions(void)
+      */
+     register_extension( "WGL_WINE_pixel_format_passthrough" );
+     opengl_funcs.ext.p_wglSetPixelFormatWINE = X11DRV_wglSetPixelFormatWINE;
++
++    register_extension( "WGL_WINE_surface" );
++    opengl_funcs.ext.p_wglCreateSurfaceWINE     = X11DRV_wglCreateSurfaceWINE;
++    opengl_funcs.ext.p_wglDestroySurfaceWINE    = X11DRV_wglDestroySurfaceWINE;
++    opengl_funcs.ext.p_wglGetSurfaceDCWINE      = X11DRV_wglGetSurfaceDCWINE;
++    opengl_funcs.ext.p_wglReleaseSurfaceDCWINE  = X11DRV_wglReleaseSurfaceDCWINE;
+ }
+ 
+ 
+@@ -3214,8 +4169,9 @@ static BOOL glxdrv_wglSwapBuffers( HDC hdc )
+     escape.code = X11DRV_FLUSH_GL_DRAWABLE;
+     escape.gl_drawable = 0;
+ 
+-    if (!(gl = get_gl_drawable( WindowFromDC( hdc ), hdc )))
++    if (!(gl = get_gl_drawable( WindowFromDC( hdc ), hdc )) || !gl->drawable)
+     {
++        release_gl_drawable( gl );
+         SetLastError( ERROR_INVALID_HANDLE );
+         return FALSE;
+     }
+@@ -3299,6 +4255,43 @@ void set_gl_drawable_parent( HWND hwnd, HWND parent )
+ {
+ }
+ 
++void sync_gl_fullscreen_text( HWND hwnd, LPCWSTR text )
++{
++}
++
++void sync_gl_fullscreen_icon( HWND hwnd )
++{
++}
++
++void sync_gl_fullscreen_to_desktop( unsigned int width, unsigned int height )
++{
++}
++
++BOOL gl_has_fullscreen_windows(void)
++{
++    return FALSE;
++}
++
++BOOL is_gl_fullscreen_window( Window window )
++{
++    return FALSE;
++}
++
++HWND gl_cursor_window_for_fullscreen( Window window )
++{
++    return NULL;
++}
++
++Window gl_fullscreen_for_cursor_window( HWND hwnd )
++{
++    return None;
++}
++
++BOOL gl_handle_event( Display *display, XEvent *xev )
++{
++    return FALSE;
++}
++
+ void destroy_gl_drawable( HWND hwnd )
+ {
+ }
+diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
+index 320eed5..a52185b 100644
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -430,7 +430,7 @@ static void sync_window_opacity( Display *display, Window win,
+ /***********************************************************************
+  *              sync_window_text
+  */
+-static void sync_window_text( Display *display, Window win, const WCHAR *text )
++void sync_window_text( Display *display, Window win, const WCHAR *text )
+ {
+     UINT count;
+     char *buffer, *utf8_buffer;
+@@ -833,7 +833,7 @@ static char *get_process_name(void)
+  *
+  * Set the window manager hints that don't change over the lifetime of a window.
+  */
+-static void set_initial_wm_hints( Display *display, Window window )
++void set_initial_wm_hints( Display *display, Window window )
+ {
+     long i;
+     Atom protocols[3];
+@@ -1126,6 +1126,7 @@ static void map_window( HWND hwnd, DWORD new_style )
+         {
+             update_net_wm_states( data );
+             sync_window_style( data );
++            TRACE("XMapWindow(%lx)\n", data->whole_window);
+             XMapWindow( data->display, data->whole_window );
+             XFlush( data->display );
+             if (data->surface && data->vis.visualid != default_visual.visualid)
+@@ -1156,8 +1157,16 @@ static void unmap_window( HWND hwnd )
+         TRACE( "win %p/%lx\n", data->hwnd, data->whole_window );
+ 
+         if (data->embedded) set_xembed_flags( data, 0 );
+-        else if (!data->managed) XUnmapWindow( data->display, data->whole_window );
+-        else XWithdrawWindow( data->display, data->whole_window, data->vis.screen );
++        else if (!data->managed)
++        {
++            TRACE("XUnmapWindow(%lx)\n", data->whole_window);
++            XUnmapWindow( data->display, data->whole_window );
++        }
++        else
++        {
++            TRACE("XWithdrawWindow(%lx)\n", data->whole_window);
++            XWithdrawWindow( data->display, data->whole_window, data->vis.screen );
++        }
+ 
+         data->mapped = FALSE;
+         data->net_wm_state = 0;
+@@ -1321,7 +1330,7 @@ static void sync_client_position( struct x11drv_win_data *data,
+     int mask = 0;
+     XWindowChanges changes;
+ 
+-    if (!data->client_window) return;
++    if (list_empty( &data->client_windows )) return;
+ 
+     changes.x      = data->client_rect.left - data->whole_rect.left;
+     changes.y      = data->client_rect.top - data->whole_rect.top;
+@@ -1335,9 +1344,14 @@ static void sync_client_position( struct x11drv_win_data *data,
+ 
+     if (mask)
+     {
+-        TRACE( "setting client win %lx pos %d,%d,%dx%d changes=%x\n",
+-               data->client_window, changes.x, changes.y, changes.width, changes.height, mask );
+-        XConfigureWindow( data->display, data->client_window, mask, &changes );
++        struct x11drv_client_window *client_window;
++
++        LIST_FOR_EACH_ENTRY( client_window, &data->client_windows, struct x11drv_client_window, entry )
++        {
++            TRACE( "setting client win %lx pos %d,%d,%dx%d changes=%x\n",
++                   client_window->window, changes.x, changes.y, changes.width, changes.height, mask );
++            XConfigureWindow( data->display, client_window->window, mask, &changes );
++        }
+     }
+ }
+ 
+@@ -1422,40 +1436,70 @@ static void move_window_bits( HWND hwnd, Window window, const RECT *old_rect, co
+  */
+ Window create_client_window( struct x11drv_win_data *data, const XVisualInfo *visual )
+ {
++    struct x11drv_client_window *client_window;
+     XSetWindowAttributes attr;
+     int x = data->client_rect.left - data->whole_rect.left;
+     int y = data->client_rect.top - data->whole_rect.top;
+     int cx = min( max( 1, data->client_rect.right - data->client_rect.left ), 65535 );
+     int cy = min( max( 1, data->client_rect.bottom - data->client_rect.top ), 65535 );
+ 
+-    if (data->client_window)
+-    {
+-        XDeleteContext( data->display, data->client_window, winContext );
+-        XDestroyWindow( data->display, data->client_window );
+-    }
++    client_window = HeapAlloc( GetProcessHeap(), 0, sizeof(*client_window) );
++    if (!client_window) return None;
+ 
+-    if (data->colormap) XFreeColormap( data->display, data->colormap );
+-    data->colormap = XCreateColormap( data->display, root_window, visual->visual,
+-                                      (visual->class == PseudoColor ||
+-                                       visual->class == GrayScale ||
+-                                       visual->class == DirectColor) ? AllocAll : AllocNone );
+-    attr.colormap = data->colormap;
++    client_window->colormap = XCreateColormap( data->display, root_window, visual->visual,
++                                               (visual->class == PseudoColor ||
++                                                visual->class == GrayScale ||
++                                                visual->class == DirectColor) ? AllocAll : AllocNone );
++    attr.colormap = client_window->colormap;
+     attr.bit_gravity = NorthWestGravity;
+     attr.win_gravity = NorthWestGravity;
+     attr.backing_store = NotUseful;
+     attr.event_mask = ExposureMask;
+     attr.border_pixel = 0;
+ 
+-    data->client_window = XCreateWindow( data->display, data->whole_window, x, y, cx, cy,
+-                                         0, default_visual.depth, InputOutput, visual->visual,
+-                                         CWBitGravity | CWWinGravity | CWBackingStore |
+-                                         CWColormap | CWEventMask | CWBorderPixel, &attr );
+-    if (!data->client_window) return 0;
++    client_window->window = XCreateWindow( data->display, data->whole_window, x, y, cx, cy,
++                                           0, default_visual.depth, InputOutput, visual->visual,
++                                           CWBitGravity | CWWinGravity | CWBackingStore |
++                                           CWColormap | CWEventMask | CWBorderPixel, &attr );
++    if (!client_window->window)
++    {
++        XFreeColormap( data->display, client_window->colormap );
++        HeapFree( GetProcessHeap(), 0, client_window );
++        return None;
++    }
+ 
+-    XSaveContext( data->display, data->client_window, winContext, (char *)data->hwnd );
+-    XMapWindow( data->display, data->client_window );
++    TRACE("created client window %lx as child of %p/%lx\n", client_window->window, data->hwnd, data->whole_window);
++    XSaveContext( data->display, client_window->window, winContext, (char *)data->hwnd );
++    TRACE("XMapWindow(%lx)\n", client_window->window);
++    XMapWindow( data->display, client_window->window );
+     XSync( data->display, False );
+-    return data->client_window;
++    list_add_tail( &data->client_windows, &client_window->entry );
++    return client_window->window;
++}
++
++
++/**********************************************************************
++ *		destroy_client_window
++ */
++void destroy_client_window( struct x11drv_win_data *data, Window window )
++{
++    struct x11drv_client_window *client_window;
++
++    TRACE("win %p/%lx client window %lx\n", data->hwnd, data->whole_window, window);
++
++    LIST_FOR_EACH_ENTRY( client_window, &data->client_windows, struct x11drv_client_window, entry )
++    {
++        if (client_window->window == window)
++        {
++            XDeleteContext( data->display, window, winContext );
++            TRACE("XDestroyWindow(%lx)\n", window);
++            XDestroyWindow( data->display, window );
++            XFreeColormap( data->display, client_window->colormap );
++            list_remove( &client_window->entry );
++            HeapFree( GetProcessHeap(), 0, client_window );
++            break;
++        }
++    }
+ }
+ 
+ 
+@@ -1539,6 +1583,8 @@ done:
+  */
+ static void destroy_whole_window( struct x11drv_win_data *data, BOOL already_destroyed )
+ {
++    struct list *head;
++
+     if (!data->whole_window)
+     {
+         if (data->embedded)
+@@ -1557,10 +1603,22 @@ static void destroy_whole_window( struct x11drv_win_data *data, BOOL already_des
+ 
+     TRACE( "win %p xwin %lx\n", data->hwnd, data->whole_window );
+     XDeleteContext( data->display, data->whole_window, winContext );
+-    if (data->client_window) XDeleteContext( data->display, data->client_window, winContext );
+-    if (!already_destroyed) XDestroyWindow( data->display, data->whole_window );
++    if (!already_destroyed)
++    {
++        TRACE("XDestroyWindow(%lx)\n", data->whole_window);
++        XDestroyWindow( data->display, data->whole_window );
++    }
++    while ((head = list_head( &data->client_windows )))
++    {
++        struct x11drv_client_window *client_window = LIST_ENTRY( head, struct x11drv_client_window, entry );
++        TRACE("implicitly destroyed client window %lx\n", client_window->window);
++        XDeleteContext( data->display, client_window->window, winContext );
++        XFreeColormap( data->display, client_window->colormap );
++        list_remove( head );
++        HeapFree( GetProcessHeap(), 0, client_window );
++    }
+     if (data->colormap) XFreeColormap( data->display, data->colormap );
+-    data->whole_window = data->client_window = 0;
++    data->whole_window = 0;
+     data->colormap = 0;
+     data->wm_state = WithdrawnState;
+     data->net_wm_state = 0;
+@@ -1586,22 +1644,29 @@ static void destroy_whole_window( struct x11drv_win_data *data, BOOL already_des
+  */
+ void set_window_visual( struct x11drv_win_data *data, const XVisualInfo *vis )
+ {
+-    Window client_window = data->client_window;
++    struct list client_windows;
+     Window whole_window = data->whole_window;
++    struct x11drv_client_window *client_window;
+ 
+     if (data->vis.visualid == vis->visualid) return;
+-    data->client_window = 0;
+-    destroy_whole_window( data, client_window != 0 /* don't destroy whole_window until reparented */ );
++    list_init( &client_windows );
++    list_move_tail( &client_windows, &data->client_windows );
++    destroy_whole_window( data, !list_empty( &client_windows ) /* don't destroy whole_window until reparented */ );
+     if (data->surface) window_surface_release( data->surface );
+     data->surface = NULL;
+     data->vis = *vis;
+     create_whole_window( data );
+-    if (!client_window) return;
+-    /* move the client to the new parent */
+-    XReparentWindow( data->display, client_window, data->whole_window,
+-                     data->client_rect.left - data->whole_rect.left,
+-                     data->client_rect.top - data->whole_rect.top );
+-    data->client_window = client_window;
++    if (list_empty( &client_windows )) return;
++    /* move the clients to the new parent */
++    LIST_FOR_EACH_ENTRY( client_window, &client_windows, struct x11drv_client_window, entry )
++    {
++        TRACE("reparenting client window %lx from %lx to win %lx\n", client_window->window, whole_window, data->whole_window);
++        XReparentWindow( data->display, client_window->window, data->whole_window,
++                         data->client_rect.left - data->whole_rect.left,
++                         data->client_rect.top - data->whole_rect.top );
++    }
++    list_move_tail( &data->client_windows, &client_windows );
++    TRACE("XDestroyWindow(%lx)\n", whole_window);
+     XDestroyWindow( data->display, whole_window );
+ }
+ 
+@@ -1617,6 +1682,7 @@ void CDECL X11DRV_SetWindowText( HWND hwnd, LPCWSTR text )
+     {
+         Display *display = thread_init_display();
+         sync_window_text( display, win, text );
++        sync_gl_fullscreen_text( hwnd, text );
+     }
+ }
+ 
+@@ -1700,6 +1766,7 @@ static struct x11drv_win_data *alloc_win_data( Display *display, HWND hwnd )
+         data->display = display;
+         data->vis = default_visual;
+         data->hwnd = hwnd;
++        list_init( &data->client_windows );
+         EnterCriticalSection( &win_data_section );
+         XSaveContext( gdi_display, (XID)hwnd, win_data_context, (char *)data );
+     }
+@@ -1963,7 +2030,7 @@ HWND create_foreign_window( Display *display, Window xwin )
+     }
+     SetRect( &data->window_rect, pos.x, pos.y, pos.x + attr.width, pos.y + attr.height );
+     data->whole_rect = data->client_rect = data->window_rect;
+-    data->whole_window = data->client_window = 0;
++    data->whole_window = 0;
+     data->embedded = TRUE;
+     data->mapped = TRUE;
+ 
+@@ -2179,8 +2246,8 @@ void CDECL X11DRV_SetParent( HWND hwnd, HWND parent, HWND old_parent )
+     }
+ done:
+     release_win_data( data );
+-    set_gl_drawable_parent( hwnd, parent );
+     fetch_icon_data( hwnd, 0, 0 );
++    set_gl_drawable_parent( hwnd, parent );
+ }
+ 
+ 
+@@ -2237,7 +2304,7 @@ void CDECL X11DRV_WindowPosChanging( HWND hwnd, HWND insert_after, UINT swp_flag
+ 
+     if (data->embedded) goto done;
+     if (data->whole_window == root_window) goto done;
+-    if (data->client_window) goto done;
++    if (!list_empty( &data->client_windows )) goto done;
+     if (!client_side_graphics && !layered) goto done;
+ 
+     surface_rect = get_surface_rect( visible_rect );
+@@ -2278,6 +2345,14 @@ void CDECL X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, UINT swp_flags
+     int event_type;
+     DWORD ex_style;
+ 
++    if (gl_has_fullscreen_windows())
++    {
++        /* prevent sync_window_position() from restacking a window above a
++           full-screen surface window. */
++        swp_flags &= ~SWP_SHOWWINDOW;
++        swp_flags |= SWP_NOZORDER;
++    }
++
+     if (!(data = get_win_data( hwnd ))) return;
+ 
+     thread_data = x11drv_thread_data();
+@@ -2408,7 +2483,10 @@ void CDECL X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, UINT swp_flags
+             if (data->iconic)
+                 XIconifyWindow( data->display, data->whole_window, data->vis.screen );
+             else if (is_window_rect_mapped( rectWindow ))
++            {
++                TRACE("XMapWindow(%lx)\n", data->whole_window);
+                 XMapWindow( data->display, data->whole_window );
++            }
+             update_net_wm_states( data );
+         }
+         else
+@@ -2498,6 +2576,7 @@ void CDECL X11DRV_SetWindowIcon( HWND hwnd, UINT type, HICON icon )
+ 
+     if (type == ICON_BIG) fetch_icon_data( hwnd, icon, 0 );
+     else fetch_icon_data( hwnd, 0, icon );
++    sync_gl_fullscreen_icon( hwnd );
+ 
+     if (!(data = get_win_data( hwnd ))) return;
+     set_wm_hints( data );
+@@ -2661,6 +2740,7 @@ done:
+ LRESULT CDECL X11DRV_WindowMessage( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+ {
+     struct x11drv_win_data *data;
++    Window window;
+ 
+     switch(msg)
+     {
+@@ -2685,6 +2765,8 @@ LRESULT CDECL X11DRV_WindowMessage( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+         }
+         else if (hwnd == x11drv_thread_data()->clip_hwnd)
+             set_window_cursor( x11drv_thread_data()->clip_window, (HCURSOR)lp );
++        else if ((window = gl_fullscreen_for_cursor_window( hwnd )))
++            set_window_cursor( window, (HCURSOR)lp );
+         return 0;
+     case WM_X11DRV_CLIP_CURSOR:
+         return clip_cursor_notify( hwnd, (HWND)lp );
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index 2694d23..ed984c1 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -375,6 +375,7 @@ extern BOOL usexcomposite DECLSPEC_HIDDEN;
+ extern BOOL managed_mode DECLSPEC_HIDDEN;
+ extern BOOL decorated_mode DECLSPEC_HIDDEN;
+ extern BOOL private_color_map DECLSPEC_HIDDEN;
++extern BOOL fullscreen_bypass_compositor DECLSPEC_HIDDEN;
+ extern int primary_monitor DECLSPEC_HIDDEN;
+ extern int copy_default_colors DECLSPEC_HIDDEN;
+ extern int alloc_system_colors DECLSPEC_HIDDEN;
+@@ -414,6 +415,7 @@ enum x11drv_atoms
+     XATOM__NET_SYSTEM_TRAY_OPCODE,
+     XATOM__NET_SYSTEM_TRAY_S0,
+     XATOM__NET_SYSTEM_TRAY_VISUAL,
++    XATOM__NET_WM_BYPASS_COMPOSITOR,
+     XATOM__NET_WM_ICON,
+     XATOM__NET_WM_MOVERESIZE,
+     XATOM__NET_WM_NAME,
+@@ -434,6 +436,7 @@ enum x11drv_atoms
+     XATOM__NET_WM_WINDOW_TYPE_DIALOG,
+     XATOM__NET_WM_WINDOW_TYPE_NORMAL,
+     XATOM__NET_WM_WINDOW_TYPE_UTILITY,
++    XATOM__NET_ACTIVE_WINDOW,
+     XATOM__NET_WORKAREA,
+     XATOM__XEMBED,
+     XATOM__XEMBED_INFO,
+@@ -513,6 +516,8 @@ extern Bool (*pXGetEventData)( Display *display, XEvent /*XGenericEventCookie*/
+ extern void (*pXFreeEventData)( Display *display, XEvent /*XGenericEventCookie*/ *event ) DECLSPEC_HIDDEN;
+ 
+ extern DWORD EVENT_x11_time_to_win32_time(Time time) DECLSPEC_HIDDEN;
++extern void focus_out( Display *display , HWND hwnd ) DECLSPEC_HIDDEN;
++extern void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event ) DECLSPEC_HIDDEN;
+ 
+ /* X11 driver private messages, must be in the range 0x80001000..0x80001fff */
+ enum x11drv_window_messages
+@@ -535,6 +540,13 @@ enum x11drv_net_wm_state
+     NB_NET_WM_STATES
+ };
+ 
++struct x11drv_client_window
++{
++    struct list entry;
++    Window      window;
++    Colormap    colormap;
++};
++
+ /* x11drv private window data */
+ struct x11drv_win_data
+ {
+@@ -543,7 +555,7 @@ struct x11drv_win_data
+     Colormap    colormap;       /* colormap if non-default visual */
+     HWND        hwnd;           /* hwnd that this private data belongs to */
+     Window      whole_window;   /* X window for the complete window */
+-    Window      client_window;  /* X window for the client area */
++    struct list client_windows; /* X windows for the client area */
+     RECT        window_rect;    /* USER window rectangle relative to parent */
+     RECT        whole_rect;     /* X window rectangle for the whole window relative to parent */
+     RECT        client_rect;    /* client area relative to parent */
+@@ -572,7 +584,15 @@ extern XIC X11DRV_get_ic( HWND hwnd ) DECLSPEC_HIDDEN;
+ 
+ extern void sync_gl_drawable( HWND hwnd, const RECT *visible_rect, const RECT *client_rect ) DECLSPEC_HIDDEN;
+ extern void set_gl_drawable_parent( HWND hwnd, HWND parent ) DECLSPEC_HIDDEN;
++extern void sync_gl_fullscreen_text( HWND hwnd, LPCWSTR text ) DECLSPEC_HIDDEN;
++extern void sync_gl_fullscreen_icon( HWND hwnd ) DECLSPEC_HIDDEN;
++extern void sync_gl_fullscreen_to_desktop( unsigned int width, unsigned int height ) DECLSPEC_HIDDEN;
+ extern void destroy_gl_drawable( HWND hwnd ) DECLSPEC_HIDDEN;
++extern BOOL gl_handle_event( Display *display, XEvent *xev ) DECLSPEC_HIDDEN;
++extern BOOL is_gl_fullscreen_window( Window window ) DECLSPEC_HIDDEN;
++extern BOOL gl_has_fullscreen_windows(void) DECLSPEC_HIDDEN;
++extern HWND gl_cursor_window_for_fullscreen( Window window ) DECLSPEC_HIDDEN;
++extern Window gl_fullscreen_for_cursor_window( HWND hwnd ) DECLSPEC_HIDDEN;
+ 
+ extern void wait_for_withdrawn_state( HWND hwnd, BOOL set ) DECLSPEC_HIDDEN;
+ extern Window init_clip_window(void) DECLSPEC_HIDDEN;
+@@ -581,10 +601,14 @@ extern void read_net_wm_states( Display *display, struct x11drv_win_data *data )
+ extern void update_net_wm_states( struct x11drv_win_data *data ) DECLSPEC_HIDDEN;
+ extern void make_window_embedded( struct x11drv_win_data *data ) DECLSPEC_HIDDEN;
+ extern Window create_client_window( struct x11drv_win_data *data, const XVisualInfo *visual ) DECLSPEC_HIDDEN;
++extern void destroy_client_window( struct x11drv_win_data *data, Window window ) DECLSPEC_HIDDEN;
+ extern void set_window_visual( struct x11drv_win_data *data, const XVisualInfo *vis ) DECLSPEC_HIDDEN;
+ extern void change_systray_owner( Display *display, Window systray_window ) DECLSPEC_HIDDEN;
+ extern void update_systray_balloon_position(void) DECLSPEC_HIDDEN;
+ extern HWND create_foreign_window( Display *display, Window window ) DECLSPEC_HIDDEN;
++extern BOOL can_activate_window( HWND hwnd ) DECLSPEC_HIDDEN;
++extern void set_initial_wm_hints( Display *display, Window window ) DECLSPEC_HIDDEN;
++extern void sync_window_text( Display *display, Window win, const WCHAR *text ) DECLSPEC_HIDDEN;
+ 
+ static inline void mirror_rect( const RECT *window_rect, RECT *rect )
+ {
+diff --git a/dlls/winex11.drv/x11drv_main.c b/dlls/winex11.drv/x11drv_main.c
+index d4f5c84..d5a6a26 100644
+--- a/dlls/winex11.drv/x11drv_main.c
++++ b/dlls/winex11.drv/x11drv_main.c
+@@ -75,6 +75,7 @@ BOOL grab_fullscreen = FALSE;
+ BOOL managed_mode = TRUE;
+ BOOL decorated_mode = TRUE;
+ BOOL private_color_map = FALSE;
++BOOL fullscreen_bypass_compositor = TRUE;
+ int primary_monitor = 0;
+ BOOL client_side_graphics = TRUE;
+ BOOL client_side_with_render = TRUE;
+@@ -131,6 +132,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
+     "_NET_SYSTEM_TRAY_OPCODE",
+     "_NET_SYSTEM_TRAY_S0",
+     "_NET_SYSTEM_TRAY_VISUAL",
++    "_NET_WM_BYPASS_COMPOSITOR",
+     "_NET_WM_ICON",
+     "_NET_WM_MOVERESIZE",
+     "_NET_WM_NAME",
+@@ -151,6 +153,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
+     "_NET_WM_WINDOW_TYPE_DIALOG",
+     "_NET_WM_WINDOW_TYPE_NORMAL",
+     "_NET_WM_WINDOW_TYPE_UTILITY",
++    "_NET_ACTIVE_WINDOW",
+     "_NET_WORKAREA",
+     "_XEMBED",
+     "_XEMBED_INFO",
+@@ -413,6 +416,9 @@ static void setup_options(void)
+ 
+     get_config_key( hkey, appkey, "InputStyle", input_style, sizeof(input_style) );
+ 
++    if (!get_config_key( hkey, appkey, "FullscreenSurfacesBypassCompositor", buffer, sizeof(buffer) ))
++        fullscreen_bypass_compositor = IS_OPTION_TRUE( buffer[0] );
++
+     if (appkey) RegCloseKey( appkey );
+     if (hkey) RegCloseKey( hkey );
+ }

@@ -1,0 +1,169 @@
+diff --git a/dlls/ntdll/thunks.c b/dlls/ntdll/thunks.c
+new file mode 100644
+index 0000000..c77daaa
+--- /dev/null
++++ b/dlls/ntdll/thunks.c
+@@ -0,0 +1,64 @@
++/*
++ * NTDLL thunks
++ *
++ * Copyright 2015 Erich E. Hoover, Sebastian Lackner, and Michael Müller
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include "config.h"
++#include "wine/port.h"
++
++#define THUNK_DEFINE
++#include "ntdll_misc.h"
++
++#define _STR(name) #name
++#define STR(name)  _STR(name)
++
++/*
++ * Several browsers (Chrome/Opera/Steam) use a "sandbox" mechanism that copies the first
++ * 16 bytes of an ntdll function and replaces it with a jump to their own trampoline.
++ * This thunking mechanism provides a wrapper compatible with such a technique, but that also
++ * mimics the normal NT behavior to avoid upsetting any security software that checks for
++ * applications tampering/hooking ntdll routines.
++ */
++
++#if defined(__i386__)
++#define DEFINE_NTDLL_THUNK(name, param_count) \
++__ASM_STDCALL_FUNC(USER_FN(name), param_count*4, \
++    "movl $" __ASM_NAME(STR(KERNEL_FN(name))) ", %eax\n\t" \
++    "movl $" __ASM_NAME("KiFastSystemCall") ", %edx\n\t" \
++    "call *%edx\n\t" \
++    "ret $(" #param_count "*4)\n\t" \
++    "nop" \
++)
++#else
++/* FIXME: no thunk support for this architecture yet */
++#define DEFINE_NTDLL_THUNK(name, param_count)
++#endif
++
++#if defined(__i386__)
++/* TODO: Expose this function, but we want to wait until we have done more testing. */
++__ASM_STDCALL_FUNC(KiFastSystemCall, 0,
++    "add $4, %esp\n\t"
++    "jmp *%eax\n\t"
++    "ret $0"
++)
++VOID KiFastSystemCall(VOID) DECLSPEC_HIDDEN;
++#endif
++
++#define T(name, param_count) DEFINE_NTDLL_THUNK(name, param_count)
++THUNK_LIST
++#undef T
+diff --git a/dlls/ntdll/thunks.h b/dlls/ntdll/thunks.h
+new file mode 100644
+index 0000000..6f63a02
+--- /dev/null
++++ b/dlls/ntdll/thunks.h
+@@ -0,0 +1,79 @@
++/*
++ * Copyright 2015 Erich E. Hoover, Sebastian Lackner, and Michael Müller
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++#ifndef __WINE_THUNKS_H
++#define __WINE_THUNKS_H
++
++#define USER_FN(name)   name
++#define KERNEL_FN(name) NTDLL_##name
++
++#define THUNK_LIST \
++    T(NtOpenFile, 6) \
++    T(NtCreateFile, 11) \
++    T(NtSetInformationFile, 5) \
++    T(NtSetInformationThread, 4) \
++    T(NtQueryAttributesFile, 2) \
++    T(NtQueryFullAttributesFile, 2) \
++    T(NtOpenProcess, 3) \
++    T(NtOpenProcessToken, 3) \
++    T(NtOpenProcessTokenEx, 4) \
++    T(NtOpenThread, 4) \
++    T(NtOpenThreadToken, 4) \
++    T(NtOpenThreadTokenEx, 5) \
++    T(NtOpenKey, 3) \
++    T(NtCreateKey, 7) \
++    T(NtMapViewOfSection, 10) \
++    T(NtUnmapViewOfSection, 2) \
++/* THUNK_LIST */
++
++#ifndef THUNK_DEFINE
++
++#if defined(__i386__)
++# define T(name, param_count) extern typeof(name) USER_FN(name);
++THUNK_LIST
++# undef T
++#endif
++
++#if defined(__i386__) && defined(NTDLL_KERNELSPACE)
++# define T(name, param_count) extern typeof(name) KERNEL_FN(name) DECLSPEC_HIDDEN;
++  THUNK_LIST
++# undef T
++# define THUNK(name) KERNEL_FN(name)
++#else
++# define THUNK(name) USER_FN(name)
++#endif
++
++#define NtOpenFile THUNK(NtOpenFile)
++#define NtCreateFile THUNK(NtCreateFile)
++#define NtSetInformationFile THUNK(NtSetInformationFile)
++#define NtSetInformationThread THUNK(NtSetInformationThread)
++#define NtQueryAttributesFile THUNK(NtQueryAttributesFile)
++#define NtQueryFullAttributesFile THUNK(NtQueryFullAttributesFile)
++#define NtOpenProcess THUNK(NtOpenProcess)
++#define NtOpenProcessToken THUNK(NtOpenProcessToken)
++#define NtOpenProcessTokenEx THUNK(NtOpenProcessTokenEx)
++#define NtOpenThread THUNK(NtOpenThread)
++#define NtOpenThreadToken THUNK(NtOpenThreadToken)
++#define NtOpenThreadTokenEx THUNK(NtOpenThreadTokenEx)
++#define NtOpenKey THUNK(NtOpenKey)
++#define NtCreateKey THUNK(NtCreateKey)
++#define NtMapViewOfSection THUNK(NtMapViewOfSection)
++#define NtUnmapViewOfSection THUNK(NtUnmapViewOfSection)
++
++#endif /* THUNK_DEFINE */
++
++#endif /* __WINE_THUNKS_H */
+diff --git a/dlls/ntdll/virtual.c b/dlls/ntdll/virtual.c
+index 4d4bc3b..b950bd7 100644
+--- a/dlls/ntdll/virtual.c
++++ b/dlls/ntdll/virtual.c
+@@ -52,6 +52,7 @@
+ #include "wine/exception.h"
+ #include "wine/list.h"
+ #include "wine/debug.h"
++#define NTDLL_KERNELSPACE
+ #include "ntdll_misc.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(virtual);
+-- 
+1.9.1

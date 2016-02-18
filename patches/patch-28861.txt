@@ -1,0 +1,13 @@
+diff --git a/dlls/imm32/imm.c b/dlls/imm32/imm.c
+index 2fa31ac..b3e9277 100644
+--- a/dlls/imm32/imm.c
++++ b/dlls/imm32/imm.c
+@@ -1424,8 +1424,6 @@ HIMC WINAPI ImmGetContext(HWND hWnd)
+     rc = GetPropW(hWnd,szwWineIMCProperty);
+     if (rc == (HIMC)-1)
+         rc = NULL;
+-    else if (rc == NULL)
+-        rc = IMM_GetThreadData()->defaultContext;
+ 
+     if (rc)
+     {

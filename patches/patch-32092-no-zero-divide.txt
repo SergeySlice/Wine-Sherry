@@ -1,0 +1,22 @@
+diff --git a/dlls/ntdll/signal_i386.c b/dlls/ntdll/signal_i386.c
+index 1a69bc0..4e07435 100644
+--- a/dlls/ntdll/signal_i386.c
++++ b/dlls/ntdll/signal_i386.c
+@@ -1981,6 +1981,17 @@ static void WINAPI raise_generic_exception( EXCEPTION_RECORD *rec, CONTEXT *cont
+ {
+     NTSTATUS status;
+ 
++    if (rec->ExceptionCode == EXCEPTION_INT_DIVIDE_BY_ZERO)
++    {
++        if (context->Eax == 0 && context->Esi == 0)
++        {
++            FIXME("Divide by zero workaround!\n");
++            context->Esi = 1;
++            set_cpu_context(context);
++            return;
++        }
++    }
++
+     status = NtRaiseException( rec, context, TRUE );
+     raise_status( status, rec );
+ }
