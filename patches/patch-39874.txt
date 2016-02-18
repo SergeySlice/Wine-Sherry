@@ -1,0 +1,80 @@
+From 0804b557d06a2353d982044bb66620227e389056 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Stefan=20D=C3=B6singer?= <stefandoesinger@gmx.at>
+Date: Sat, 16 Jan 2016 22:29:37 +0000
+Subject: [PATCH 5/5] d3d8: Don't validate 2D texture lock coordinates.
+Reply-To: wine-devel <wine-devel@winehq.org>
+
+The todo_wine added to test_surface_blocks matches that that already
+exists in d3d9. It seems that compressed textures have extra checks.
+---
+ dlls/d3d8/surface.c      | 16 +++++++++++++---
+ dlls/d3d8/tests/device.c |  2 +-
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/d3d8/surface.c b/dlls/d3d8/surface.c
+index 679f094..ec263b1 100644
+--- a/dlls/d3d8/surface.c
++++ b/dlls/d3d8/surface.c
+@@ -204,26 +204,36 @@ static HRESULT WINAPI d3d8_surface_LockRect(IDirect3DSurface8 *iface,
+     struct wined3d_box box;
+     struct wined3d_map_desc map_desc;
+     HRESULT hr;
++    D3DRESOURCETYPE type;
+ 
+     TRACE("iface %p, locked_rect %p, rect %s, flags %#x.\n",
+             iface, locked_rect, wine_dbgstr_rect(rect), flags);
+ 
+     wined3d_mutex_lock();
++
++    if (surface->texture)
++        type = IDirect3DBaseTexture8_GetType(&surface->texture->IDirect3DBaseTexture8_iface);
++    else
++        type = D3DRTYPE_SURFACE;
++
+     if (rect)
+     {
+         D3DSURFACE_DESC desc;
+         IDirect3DSurface8_GetDesc(iface, &desc);
+ 
+-        if ((rect->left < 0)
++        if (type != D3DRTYPE_TEXTURE
++                && ((rect->left < 0)
+                 || (rect->top < 0)
+                 || (rect->left >= rect->right)
+                 || (rect->top >= rect->bottom)
+                 || (rect->right > desc.Width)
+-                || (rect->bottom > desc.Height))
++                || (rect->bottom > desc.Height)))
+         {
+             WARN("Trying to lock an invalid rectangle, returning D3DERR_INVALIDCALL\n");
+             wined3d_mutex_unlock();
+ 
++            locked_rect->Pitch = 0;
++            locked_rect->pBits = NULL;
+             return D3DERR_INVALIDCALL;
+         }
+         box.left = rect->left;
+@@ -243,7 +253,7 @@ static HRESULT WINAPI d3d8_surface_LockRect(IDirect3DSurface8 *iface,
+         locked_rect->Pitch = map_desc.row_pitch;
+         locked_rect->pBits = map_desc.data;
+     }
+-    else
++    else if (type != D3DRTYPE_TEXTURE)
+     {
+         locked_rect->Pitch = 0;
+         locked_rect->pBits = NULL;
+diff --git a/dlls/d3d8/tests/device.c b/dlls/d3d8/tests/device.c
+index cf830fe..fe7236e 100644
+--- a/dlls/d3d8/tests/device.c
++++ b/dlls/d3d8/tests/device.c
+@@ -5608,7 +5608,7 @@ static void test_surface_blocks(void)
+         rect.right = formats[i].block_width;
+         rect.bottom = formats[i].block_height;
+         hr = IDirect3DTexture8_LockRect(texture, 1, &locked_rect, &rect, 0);
+-        ok(hr == D3DERR_INVALIDCALL, "Got unexpected hr %#x.\n", hr);
++        todo_wine ok(hr == D3DERR_INVALIDCALL, "Got unexpected hr %#x.\n", hr);
+         if (SUCCEEDED(hr))
+             IDirect3DTexture8_UnlockRect(texture, 1);
+ 
+-- 
+2.4.10

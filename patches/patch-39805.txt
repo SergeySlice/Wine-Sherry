@@ -1,0 +1,30 @@
+From c87a5093250822a1cd10f4c216c38fa88903d5a7 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Stefan=20D=C3=B6singer?= <stefandoesinger@gmx.at>
+Date: Sat, 16 Jan 2016 17:09:49 +0000
+Subject: [PATCH] wined3d: Prepare GL textures in surface_load_ds_location.
+Reply-To: wine-devel <wine-devel@winehq.org>
+
+This is necessary for depth blits now that the FBO code doesn't do that
+on its own any more.
+---
+ dlls/wined3d/surface.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index 6b5f33e..829a515 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -3631,10 +3631,10 @@ void surface_load_ds_location(struct wined3d_surface *surface, struct wined3d_co
+         return;
+     }
+ 
++    wined3d_surface_prepare(surface, context, location);
+     if (surface->locations & WINED3D_LOCATION_DISCARDED)
+     {
+         TRACE("Surface was discarded, no need copy data.\n");
+-        wined3d_surface_prepare(surface, context, location);
+         surface->locations &= ~WINED3D_LOCATION_DISCARDED;
+         surface->locations |= location;
+         surface->ds_current_size.cx = surface->resource.width;
+-- 
+2.4.10

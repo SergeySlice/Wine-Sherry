@@ -1,0 +1,1452 @@
+diff --git a/configure.ac b/configure.ac
+index 688ab26..f1a7f99 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1711,6 +1711,9 @@ fi
+ WINE_NOTICE_WITH(tiff,[test "x$ac_cv_lib_soname_tiff" = "x"],
+                  [libtiff ${notice_platform}development files not found, TIFF won't be supported.])
+ 
++dnl **** Check for libtxc_dxtn ****
++WINE_CHECK_SONAME(txc_dxtn,tx_compress_dxtn,,,,[[libtxc_dxtn\\(_s2tc\\)\\{0,1\\}]])
++
+ dnl **** Check for mpg123 ****
+ if test "x$with_mpg123" != "xno"
+ then
+@@ -3587,7 +3590,8 @@ then
+ [wine_fn_output_makedep ()
+ {
+     AS_MKDIR_P(tools)
+-    $CC -Iinclude -I$srcdir/include -D__WINESRC__ $EXTRACFLAGS $CPPFLAGS $CFLAGS -o tools/makedep$ac_exeext $srcdir/tools/makedep.c $LDFLAGS
++    @$CC -Iinclude -I$srcdir/include -D__WINESRC__ $EXTRACFLAGS $CPPFLAGS $CFLAGS -o tools/makedep$ac_exeext $srcdir/tools/makedep.c $LDFLAGS
++    @echo "[CC] makedep"
+ }])
+ fi
+ 
+diff --git a/dlls/d3dx9_36/Makefile.in b/dlls/d3dx9_36/Makefile.in
+index 5958c57..aa387b5 100644
+--- a/dlls/d3dx9_36/Makefile.in
++++ b/dlls/d3dx9_36/Makefile.in
+@@ -1,6 +1,6 @@
+ MODULE    = d3dx9_36.dll
+ IMPORTLIB = d3dx9
+-IMPORTS   = d3d9 d3dcompiler dxguid d3dxof ole32 gdi32 user32
++IMPORTS   = d3d9 d3dcompiler dxguid d3dxof ole32 gdi32 user32 wined3d
+ 
+ C_SRCS = \
+ 	core.c \
+diff --git a/dlls/d3dx9_36/d3dx9_36.spec b/dlls/d3dx9_36/d3dx9_36.spec
+index 15d693c..4ae1384 100644
+--- a/dlls/d3dx9_36/d3dx9_36.spec
++++ b/dlls/d3dx9_36/d3dx9_36.spec
+@@ -159,8 +159,8 @@
+ @ stdcall D3DXGetPixelShaderProfile(ptr)
+ @ stdcall D3DXGetShaderConstantTable(ptr ptr)
+ @ stdcall D3DXGetShaderConstantTableEx(ptr long ptr)
+-@ stub D3DXGetShaderInputSemantics(ptr ptr ptr)
+-@ stub D3DXGetShaderOutputSemantics(ptr ptr ptr)
++@ stdcall D3DXGetShaderInputSemantics(ptr ptr ptr)
++@ stdcall D3DXGetShaderOutputSemantics(ptr ptr ptr)
+ @ stdcall D3DXGetShaderSamplers(ptr ptr ptr)
+ @ stdcall D3DXGetShaderSize(ptr)
+ @ stdcall D3DXGetShaderVersion(ptr)
+diff --git a/dlls/d3dx9_36/shader.c b/dlls/d3dx9_36/shader.c
+index cdc470b..347b587 100644
+--- a/dlls/d3dx9_36/shader.c
++++ b/dlls/d3dx9_36/shader.c
+@@ -1,6 +1,7 @@
+ /*
+  * Copyright 2008 Luis Busquets
+  * Copyright 2009 Matteo Bruni
++ * Copyright 2010, 2013 Christian Costa
+  * Copyright 2011 Travis Athougies
+  *
+  * This library is free software; you can redistribute it and/or
+@@ -2130,3 +2131,112 @@ HRESULT WINAPI D3DXDisassembleShader(const DWORD *shader, BOOL colorcode, const
+    FIXME("%p %d %s %p: stub\n", shader, colorcode, debugstr_a(comments), disassembly);
+    return E_OUTOFMEMORY;
+ }
++
++const DWORD* skip_instruction(const DWORD *byte_code, UINT shader_model)
++{
++    TRACE("Shader model %u\n", shader_model);
++
++    /* Handle all special instructions whose arguments may contain D3DSIO_DCL */
++    if ((*byte_code & D3DSI_OPCODE_MASK) == D3DSIO_COMMENT)
++    {
++        byte_code += 1 + ((*byte_code & D3DSI_COMMENTSIZE_MASK) >> D3DSI_COMMENTSIZE_SHIFT);
++    }
++    else if (shader_model >= 2)
++    {
++        byte_code += 1 + ((*byte_code & D3DSI_INSTLENGTH_MASK) >> D3DSI_INSTLENGTH_SHIFT);
++    }
++    else if ((*byte_code & D3DSI_OPCODE_MASK) == D3DSIO_DEF)
++    {
++        byte_code += 1 + 5;
++    }
++    else
++    {
++        /* Handle remaining safe instructions */
++        while (*++byte_code & (1 << 31));
++    }
++
++    return byte_code;
++}
++
++static UINT get_shader_semantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, BOOL input)
++{
++    const DWORD *ptr = byte_code;
++    UINT shader_model = (*ptr >> 8) & 0xff;
++    UINT i = 0;
++
++    TRACE("Shader version: %#x\n", *ptr);
++    ptr++;
++
++    while (*ptr != D3DSIO_END)
++    {
++        if (*ptr & (1 << 31))
++        {
++            FIXME("Opcode expected but got %#x\n", *ptr);
++            return 0;
++        }
++        else if ((*ptr & D3DSI_OPCODE_MASK) == D3DSIO_DCL)
++        {
++            DWORD param1 = *++ptr;
++            DWORD param2 = *++ptr;
++            DWORD usage = param1 & 0x1f;
++            DWORD usage_index = (param1 >> 16) & 0xf;
++            DWORD reg_type = (((param2 >> 11) & 0x3) << 3) | ((param2 >> 28) & 0x7);
++
++            TRACE("D3DSIO_DCL param1: %#x, param2: %#x, usage: %u, usage_index: %u, reg_type: %u\n",
++                   param1, param2, usage, usage_index, reg_type);
++
++            if ((input && (reg_type == D3DSPR_INPUT)) || (!input && (reg_type == D3DSPR_OUTPUT)))
++            {
++                if (semantics)
++                {
++                    semantics[i].Usage = usage;
++                    semantics[i].UsageIndex = usage_index;
++                }
++                i++;
++            }
++
++            ptr++;
++        }
++        else
++        {
++            ptr = skip_instruction(ptr, shader_model);
++        }
++    }
++
++    return i;
++}
++
++HRESULT WINAPI D3DXGetShaderInputSemantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, UINT *count)
++{
++    UINT nb_semantics;
++
++    TRACE("byte_code %p, semantics %p, count %p\n", byte_code, semantics, count);
++
++    if (!byte_code)
++        return D3DERR_INVALIDCALL;
++
++    nb_semantics = get_shader_semantics(byte_code, semantics, TRUE);
++
++    if (count)
++        *count = nb_semantics;
++
++    return D3D_OK;
++}
++
++
++HRESULT WINAPI D3DXGetShaderOutputSemantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, UINT *count)
++{
++    UINT nb_semantics;
++
++    TRACE("byte_code %p, semantics %p, count %p\n", byte_code, semantics, count);
++
++    if (!byte_code)
++        return D3DERR_INVALIDCALL;
++
++    nb_semantics = get_shader_semantics(byte_code, semantics, FALSE);
++
++    if (count)
++        *count = nb_semantics;
++
++    return D3D_OK;
++}
+diff --git a/dlls/d3dx9_36/surface.c b/dlls/d3dx9_36/surface.c
+index 295ef63..ed1caff 100644
+--- a/dlls/d3dx9_36/surface.c
++++ b/dlls/d3dx9_36/surface.c
+@@ -18,6 +18,7 @@
+  *
+  */
+ 
++#include "config.h"
+ #include "wine/debug.h"
+ #include "wine/unicode.h"
+ #include "d3dx9_36_private.h"
+@@ -26,6 +27,8 @@
+ #include "ole2.h"
+ #include "wincodec.h"
+ 
++#include "wine/wined3d.h"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
+ 
+ 
+@@ -1716,6 +1719,27 @@ void point_filter_argb_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slic
+     }
+ }
+ 
++typedef BOOL (*dxtn_conversion_func)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                                     enum wined3d_format_id format, unsigned int w, unsigned int h);
++
++static dxtn_conversion_func get_dxtn_conversion_func(D3DFORMAT format, BOOL encode)
++{
++    switch (format)
++    {
++        case D3DFMT_DXT1:
++            if (!wined3d_dxtn_supported()) return NULL;
++            return encode ? wined3d_dxt1_encode : wined3d_dxt1_decode;
++        case D3DFMT_DXT3:
++            if (!wined3d_dxtn_supported()) return NULL;
++            return encode ? wined3d_dxt3_encode : wined3d_dxt3_decode;
++        case D3DFMT_DXT5:
++            if (!wined3d_dxtn_supported()) return NULL;
++            return encode ? wined3d_dxt5_encode : wined3d_dxt5_decode;
++        default:
++            return NULL;
++    }
++}
++
+ /************************************************************
+  * D3DXLoadSurfaceFromMemory
+  *
+@@ -1757,6 +1781,7 @@ HRESULT WINAPI D3DXLoadSurfaceFromMemory(IDirect3DSurface9 *dst_surface,
+     D3DSURFACE_DESC surfdesc;
+     D3DLOCKED_RECT lockrect;
+     struct volume src_size, dst_size;
++    HRESULT ret = D3D_OK;
+ 
+     TRACE("(%p, %p, %s, %p, %#x, %u, %p, %s, %#x, 0x%08x)\n",
+             dst_surface, dst_palette, wine_dbgstr_rect(dst_rect), src_memory, src_format,
+@@ -1838,8 +1863,15 @@ HRESULT WINAPI D3DXLoadSurfaceFromMemory(IDirect3DSurface9 *dst_surface,
+     }
+     else /* Stretching or format conversion. */
+     {
+-        if (((srcformatdesc->type != FORMAT_ARGB) && (srcformatdesc->type != FORMAT_INDEX)) ||
+-            (destformatdesc->type != FORMAT_ARGB))
++        dxtn_conversion_func pre_convert, post_convert;
++        void *tmp_src_memory = NULL, *tmp_dst_memory = NULL;
++        UINT tmp_src_pitch, tmp_dst_pitch;
++
++        pre_convert  = get_dxtn_conversion_func(srcformatdesc->format, FALSE);
++        post_convert = get_dxtn_conversion_func(destformatdesc->format, TRUE);
++
++        if ((!pre_convert && (srcformatdesc->type != FORMAT_ARGB) && (srcformatdesc->type != FORMAT_INDEX)) ||
++            (!post_convert && (destformatdesc->type != FORMAT_ARGB)))
+         {
+             FIXME("Format conversion missing %#x -> %#x\n", src_format, surfdesc.Format);
+             return E_NOTIMPL;
+@@ -1848,10 +1880,52 @@ HRESULT WINAPI D3DXLoadSurfaceFromMemory(IDirect3DSurface9 *dst_surface,
+         if (FAILED(IDirect3DSurface9_LockRect(dst_surface, &lockrect, dst_rect, 0)))
+             return D3DXERR_INVALIDDATA;
+ 
++        /* handle pre-conversion */
++        if (pre_convert)
++        {
++            tmp_src_memory = HeapAlloc(GetProcessHeap(), 0, src_size.width * src_size.height * sizeof(DWORD));
++            if (!tmp_src_memory)
++            {
++                ret = E_OUTOFMEMORY;
++                goto error;
++            }
++            tmp_src_pitch = src_size.width * sizeof(DWORD);
++            if (!pre_convert(src_memory, tmp_src_memory, src_pitch, tmp_src_pitch,
++                    WINED3DFMT_B8G8R8A8_UNORM, src_size.width, src_size.height))
++            {
++                ret = E_FAIL;
++                goto error;
++            }
++            srcformatdesc = get_format_info(D3DFMT_A8R8G8B8);
++        }
++        else
++        {
++            tmp_src_memory = (void *)src_memory;
++            tmp_src_pitch  = src_pitch;
++        }
++
++        /* handle post-conversion */
++        if (post_convert)
++        {
++            tmp_dst_memory = HeapAlloc(GetProcessHeap(), 0, dst_size.width * dst_size.height * sizeof(DWORD));
++            if (!tmp_dst_memory)
++            {
++                ret = E_OUTOFMEMORY;
++                goto error;
++            }
++            tmp_dst_pitch = dst_size.width * sizeof(DWORD);
++            destformatdesc = get_format_info(D3DFMT_A8R8G8B8);
++        }
++        else
++        {
++            tmp_dst_memory = lockrect.pBits;
++            tmp_dst_pitch  = lockrect.Pitch;
++        }
++
+         if ((filter & 0xf) == D3DX_FILTER_NONE)
+         {
+-            convert_argb_pixels(src_memory, src_pitch, 0, &src_size, srcformatdesc,
+-                    lockrect.pBits, lockrect.Pitch, 0, &dst_size, destformatdesc, color_key, src_palette);
++            convert_argb_pixels(tmp_src_memory, tmp_src_pitch, 0, &src_size, srcformatdesc,
++                    tmp_dst_memory, tmp_dst_pitch, 0, &dst_size, destformatdesc, color_key, src_palette);
+         }
+         else /* if ((filter & 0xf) == D3DX_FILTER_POINT) */
+         {
+@@ -1860,14 +1934,30 @@ HRESULT WINAPI D3DXLoadSurfaceFromMemory(IDirect3DSurface9 *dst_surface,
+ 
+             /* Always apply a point filter until D3DX_FILTER_LINEAR,
+              * D3DX_FILTER_TRIANGLE and D3DX_FILTER_BOX are implemented. */
+-            point_filter_argb_pixels(src_memory, src_pitch, 0, &src_size, srcformatdesc,
+-                    lockrect.pBits, lockrect.Pitch, 0, &dst_size, destformatdesc, color_key, src_palette);
++            point_filter_argb_pixels(tmp_src_memory, tmp_src_pitch, 0, &src_size, srcformatdesc,
++                    tmp_dst_memory, tmp_dst_pitch, 0, &dst_size, destformatdesc, color_key, src_palette);
++        }
++
++        /* handle post-conversion */
++        if (post_convert)
++        {
++            if (!post_convert(tmp_dst_memory, lockrect.pBits, tmp_dst_pitch, lockrect.Pitch,
++                    WINED3DFMT_B8G8R8A8_UNORM, dst_size.width, dst_size.height))
++            {
++                ret = E_FAIL;
++                goto error;
++            }
+         }
+ 
++error:
++        if (pre_convert)
++            HeapFree(GetProcessHeap(), 0, tmp_src_memory);
++        if (post_convert)
++            HeapFree(GetProcessHeap(), 0, tmp_dst_memory);
+         IDirect3DSurface9_UnlockRect(dst_surface);
+     }
+ 
+-    return D3D_OK;
++    return ret;
+ }
+ 
+ /************************************************************
+diff --git a/dlls/d3dx9_36/tests/shader.c b/dlls/d3dx9_36/tests/shader.c
+index 694540c..728cd86 100644
+--- a/dlls/d3dx9_36/tests/shader.c
++++ b/dlls/d3dx9_36/tests/shader.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright 2008 Luis Busquets
++ * Copyright 2010, 2013 Christian Costa
+  * Copyright 2011 Travis Athougies
+  *
+  * This library is free software; you can redistribute it and/or
+@@ -299,6 +300,26 @@ static const DWORD fx_shader_with_ctab[] =
+     0x0000ffff                                                              /* END                      */
+ };
+ 
++static const DWORD semantics_vs11[] = {
++    0xfffe0101,                                                             /* vs_1_1                       */
++    0x0001fffe, D3DSIO_DCL,                                                 /* Comment                      */
++    0x00000051, 0xa00f0001, D3DSIO_DCL, D3DSIO_DCL, D3DSIO_DCL, D3DSIO_DCL, /* def c1 = dcl, dcl, dcl, dcl  */
++    0x0000001f, 0x80000000, 0x900f0000,                                     /* dcl_position0 v0 (input)     */
++    0x0000001f, 0x80000005, 0x900f0001,                                     /* dcl_texcoord0 v1 (input)     */
++    0x0000001f, 0x80010005, 0x900f0002,                                     /* dcl_texcoord1 v2 (input)     */
++    0x0000001f, 0x8000000a, 0xe00f0000,                                     /* dcl_color0    oD0 (output)   */
++    0x0000ffff};                                                            /* END                          */
++
++static const DWORD semantics_vs30[] = {
++    0xfffe0300,                                                             /* vs_3_0                       */
++    0x0001fffe, D3DSIO_DCL,                                                 /* Comment                      */
++    0x05000051, 0xa00f0001, D3DSIO_DCL, D3DSIO_DCL, D3DSIO_DCL, D3DSIO_DCL, /* def c1 = dcl, dcl, dcl, dcl  */
++    0x0200001f, 0x80000000, 0x900f0000,                                     /* dcl_position0 v0 (input)     */
++    0x0200001f, 0x80000005, 0x900f0001,                                     /* dcl_texcoord0 v1 (input)     */
++    0x0200001f, 0x80010005, 0x900f0002,                                     /* dcl_texcoord1 v2 (input)     */
++    0x0200001f, 0x8000000a, 0xe00f0000,                                     /* dcl_color0    o0 (output)    */
++    0x0000ffff};                                                            /* END                          */
++
+ static void test_get_shader_size(void)
+ {
+     UINT shader_size, expected;
+@@ -6489,6 +6510,70 @@ static void test_registerset_defaults(void)
+     if (wnd) DestroyWindow(wnd);
+ }
+ 
++static void test_get_shader_semantics(void)
++{
++    HRESULT ret;
++    D3DXSEMANTIC semantics[MAXD3DDECLLENGTH];
++    UINT count;
++
++    /* Test D3DXGetShaderInputSemantics */
++
++    /* Check wrong parameters */
++    ret = D3DXGetShaderInputSemantics(NULL, NULL, NULL);
++    ok(ret == D3DERR_INVALIDCALL, "Returned %#x, expected %#x\n", ret, D3DERR_INVALIDCALL);
++    ret = D3DXGetShaderInputSemantics(NULL, NULL, &count);
++    ok(ret == D3DERR_INVALIDCALL, "Returned %#x, expected %#x\n", ret, D3DERR_INVALIDCALL);
++    ret = D3DXGetShaderInputSemantics(NULL, semantics, NULL);
++    ok(ret == D3DERR_INVALIDCALL, "Returned %#x, expected %#x\n", ret, D3DERR_INVALIDCALL);
++    ret = D3DXGetShaderInputSemantics(NULL, semantics, &count);
++    ok(ret == D3DERR_INVALIDCALL, "Returned %#x, expected %#x\n", ret, D3DERR_INVALIDCALL);
++    ret = D3DXGetShaderInputSemantics(semantics_vs11, NULL, NULL);
++    ok(ret == D3D_OK, "Failed with %#x\n", ret);
++
++    /* Check null semantics pointer */
++    count = 0xdeadbeef;
++    ret = D3DXGetShaderInputSemantics(semantics_vs11, NULL, &count);
++    ok(ret == D3D_OK, "Failed with %#x\n", ret);
++    ok(count == 3, "Got %u, expected 3\n", count);
++
++    /* Check null count pointer */
++    memset(semantics, 0xcc, sizeof(semantics));
++    ret = D3DXGetShaderInputSemantics(semantics_vs11, semantics, NULL);
++    ok(ret == D3D_OK, "Failed with %#x\n", ret);
++    ok(semantics[0].Usage == D3DDECLUSAGE_POSITION, "Got %u, expected %u\n", semantics[0].Usage, D3DDECLUSAGE_POSITION);
++    ok(semantics[0].UsageIndex == 0, "Got %u, expected 0\n", semantics[0].UsageIndex);
++    ok(semantics[1].Usage == D3DDECLUSAGE_TEXCOORD, "Got %u, expected %u\n", semantics[1].Usage, D3DDECLUSAGE_TEXCOORD);
++    ok(semantics[1].UsageIndex == 0, "Got %u, expected 0\n", semantics[0].UsageIndex);
++    ok(semantics[2].Usage == D3DDECLUSAGE_TEXCOORD, "Got %u, expected %u\n", semantics[2].Usage, D3DDECLUSAGE_TEXCOORD);
++    ok(semantics[2].UsageIndex == 1, "Got %u, expected 1\n", semantics[0].UsageIndex);
++
++    /* Check with vs11 shader */
++    count = 0xdeadbeef;
++    memset(semantics, 0xcc, sizeof(semantics));
++    ret = D3DXGetShaderInputSemantics(semantics_vs11, semantics, &count);
++    ok(ret == D3D_OK, "Failed with %#x\n", ret);
++    ok(count == 3, "Got %u, expected 3\n", count);
++    ok(semantics[0].Usage == D3DDECLUSAGE_POSITION, "Got %u, expected %u\n", semantics[0].Usage, D3DDECLUSAGE_POSITION);
++    ok(semantics[0].UsageIndex == 0, "Got %u, expected 0\n", semantics[0].UsageIndex);
++    ok(semantics[1].Usage == D3DDECLUSAGE_TEXCOORD, "Got %u, expected %u\n", semantics[1].Usage, D3DDECLUSAGE_TEXCOORD);
++    ok(semantics[1].UsageIndex == 0, "Got %u, expected 0\n", semantics[0].UsageIndex);
++    ok(semantics[2].Usage == D3DDECLUSAGE_TEXCOORD, "Got %u, expected %u\n", semantics[2].Usage, D3DDECLUSAGE_TEXCOORD);
++    ok(semantics[2].UsageIndex == 1, "Got %u, expected 1\n", semantics[0].UsageIndex);
++
++    /* Check with vs30 shader */
++    count = 0xdeadbeef;
++    memset(semantics, 0xcc, sizeof(semantics));
++    ret = D3DXGetShaderInputSemantics(semantics_vs30, semantics, &count);
++    ok(ret == D3D_OK, "Failed with %#x\n", ret);
++    ok(count == 3, "Got %u, expected 3\n", count);
++    ok(semantics[0].Usage == D3DDECLUSAGE_POSITION, "Got %u, expected %u\n", semantics[0].Usage, D3DDECLUSAGE_POSITION);
++    ok(semantics[0].UsageIndex == 0, "Got %u, expected 0\n", semantics[0].UsageIndex);
++    ok(semantics[1].Usage == D3DDECLUSAGE_TEXCOORD, "Got %u, expected %u\n", semantics[1].Usage, D3DDECLUSAGE_TEXCOORD);
++    ok(semantics[1].UsageIndex == 0, "Got %u, expected 0\n", semantics[0].UsageIndex);
++    ok(semantics[2].Usage == D3DDECLUSAGE_TEXCOORD, "Got %u, expected %u\n", semantics[2].Usage, D3DDECLUSAGE_TEXCOORD);
++    ok(semantics[2].UsageIndex == 1, "Got %u, expected 1\n", semantics[0].UsageIndex);
++}
++
+ START_TEST(shader)
+ {
+     test_get_shader_size();
+@@ -6502,4 +6587,5 @@ START_TEST(shader)
+     test_get_shader_constant_variables();
+     test_registerset();
+     test_registerset_defaults();
++    test_get_shader_semantics();
+ }
+diff --git a/dlls/d3dx9_36/tests/surface.c b/dlls/d3dx9_36/tests/surface.c
+index 7a4dff8..87c3eb7 100644
+--- a/dlls/d3dx9_36/tests/surface.c
++++ b/dlls/d3dx9_36/tests/surface.c
+@@ -1103,7 +1103,7 @@ static void test_D3DXLoadSurface(IDirect3DDevice9 *device)
+             hr = IDirect3DTexture9_GetSurfaceLevel(tex, 0, &newsurf);
+             ok(SUCCEEDED(hr), "Failed to get the surface, hr %#x.\n", hr);
+             hr = D3DXLoadSurfaceFromSurface(newsurf, NULL, NULL, surf, NULL, NULL, D3DX_FILTER_NONE, 0);
+-            todo_wine ok(SUCCEEDED(hr), "Failed to convert pixels to DXT3 format.\n");
++            ok(SUCCEEDED(hr), "Failed to convert pixels to DXT3 format.\n");
+             check_release((IUnknown*)newsurf, 1);
+             check_release((IUnknown*)tex, 0);
+         }
+@@ -1129,7 +1129,7 @@ static void test_D3DXLoadSurface(IDirect3DDevice9 *device)
+             hr = IDirect3DTexture9_GetSurfaceLevel(tex, 0, &newsurf);
+             ok(SUCCEEDED(hr), "Failed to get the surface, hr %#x.\n", hr);
+             hr = D3DXLoadSurfaceFromSurface(newsurf, NULL, NULL, surf, NULL, NULL, D3DX_FILTER_NONE, 0);
+-            todo_wine ok(SUCCEEDED(hr), "Failed to convert pixels to DXT5 format.\n");
++            ok(SUCCEEDED(hr), "Failed to convert pixels to DXT5 format.\n");
+             check_release((IUnknown*)newsurf, 1);
+             check_release((IUnknown*)tex, 0);
+         }
+@@ -1142,10 +1142,10 @@ static void test_D3DXLoadSurface(IDirect3DDevice9 *device)
+             hr = IDirect3DTexture9_GetSurfaceLevel(tex, 0, &newsurf);
+             ok(SUCCEEDED(hr), "Failed to get the surface, hr %#x.\n", hr);
+             hr = D3DXLoadSurfaceFromSurface(newsurf, NULL, NULL, surf, NULL, NULL, D3DX_FILTER_NONE, 0);
+-            todo_wine ok(SUCCEEDED(hr), "Failed to convert pixels to DXT1 format.\n");
++            ok(SUCCEEDED(hr), "Failed to convert pixels to DXT1 format.\n");
+ 
+             hr = D3DXLoadSurfaceFromSurface(surf, NULL, NULL, newsurf, NULL, NULL, D3DX_FILTER_NONE, 0);
+-            todo_wine ok(SUCCEEDED(hr), "Failed to convert pixels from DXT1 format.\n");
++            ok(SUCCEEDED(hr), "Failed to convert pixels from DXT1 format.\n");
+ 
+             check_release((IUnknown*)newsurf, 1);
+             check_release((IUnknown*)tex, 0);
+diff --git a/dlls/d3dx9_36/tests/texture.c b/dlls/d3dx9_36/tests/texture.c
+index c90e2d5..d0a846a 100644
+--- a/dlls/d3dx9_36/tests/texture.c
++++ b/dlls/d3dx9_36/tests/texture.c
+@@ -384,6 +384,16 @@ static void test_D3DXCheckTextureRequirements(IDirect3DDevice9 *device)
+         ok(height == 4, "Returned height %d, expected %d\n", height, 4);
+         ok(mipmaps == 1, "Returned mipmaps %d, expected %d\n", mipmaps, 1);
+         ok(format == D3DFMT_DXT5, "Returned format %u, expected %u\n", format, D3DFMT_DXT5);
++
++        format = D3DFMT_DXT5;
++        width = 5; height = 5;
++        mipmaps = 1;
++        hr = D3DXCheckTextureRequirements(device, &width, &height, &mipmaps, 0, &format, D3DPOOL_DEFAULT);
++        ok(hr == D3D_OK, "D3DXCheckTextureRequirements returned %#x, expected %#x\n", hr, D3D_OK);
++        ok(width == 8, "Returned width %d, expected %d\n", width, 8);
++        ok(height == 8, "Returned height %d, expected %d\n", height, 8);
++        ok(mipmaps == 1, "Returned mipmaps %d, expected %d\n", mipmaps, 1);
++        ok(format == D3DFMT_DXT5, "Returned format %u, expected %u\n", format, D3DFMT_DXT5);
+     }
+     else
+     {
+diff --git a/dlls/d3dx9_36/texture.c b/dlls/d3dx9_36/texture.c
+index 38349e2..d160882 100644
+--- a/dlls/d3dx9_36/texture.c
++++ b/dlls/d3dx9_36/texture.c
+@@ -334,10 +334,10 @@ HRESULT WINAPI D3DXCheckTextureRequirements(struct IDirect3DDevice9 *device, UIN
+ 
+     if (fmt->block_width != 1 || fmt->block_height != 1)
+     {
+-        if (w < fmt->block_width)
+-            w = fmt->block_width;
+-        if (h < fmt->block_height)
+-            h = fmt->block_height;
++        if (w % fmt->block_width)
++            w += fmt->block_width - w % fmt->block_width;
++        if (h % fmt->block_height)
++            h += fmt->block_height - h % fmt->block_height;
+     }
+ 
+     if ((caps.TextureCaps & D3DPTEXTURECAPS_POW2) && (!is_pow2(w)))
+diff --git a/dlls/ddraw/ddraw.c b/dlls/ddraw/ddraw.c
+index 31ec6bf..b860834 100644
+--- a/dlls/ddraw/ddraw.c
++++ b/dlls/ddraw/ddraw.c
+@@ -3119,46 +3119,97 @@ static HRESULT WINAPI ddraw7_EnumSurfaces(IDirectDraw7 *iface, DWORD Flags,
+ {
+     struct ddraw *ddraw = impl_from_IDirectDraw7(iface);
+     struct ddraw_surface *surf;
+-    BOOL all, nomatch;
+-    DDSURFACEDESC2 desc;
+-    struct list *entry, *entry2;
++    DWORD match_flags = Flags & (DDENUMSURFACES_ALL | DDENUMSURFACES_NOMATCH | DDENUMSURFACES_MATCH);
+ 
+     TRACE("iface %p, flags %#x, surface_desc %p, context %p, callback %p.\n",
+             iface, Flags, DDSD, Context, Callback);
+ 
+-    all = Flags & DDENUMSURFACES_ALL;
+-    nomatch = Flags & DDENUMSURFACES_NOMATCH;
+-
+     if (!Callback)
+         return DDERR_INVALIDPARAMS;
+ 
+-    wined3d_mutex_lock();
+-
+-    /* Use the _SAFE enumeration, the app may destroy enumerated surfaces */
+-    LIST_FOR_EACH_SAFE(entry, entry2, &ddraw->surface_list)
++    if (Flags & DDENUMSURFACES_CANBECREATED)
+     {
+-        surf = LIST_ENTRY(entry, struct ddraw_surface, surface_list_entry);
++         IDirectDrawSurface7 *surface;
++         DDSURFACEDESC2 testdesc;
++
++        if (match_flags != DDENUMSURFACES_MATCH)
++            return DDERR_INVALIDPARAMS;
++
++        if (!DDSD)
++            return DDERR_INVALIDPARAMS;
++
++        memcpy(&testdesc, DDSD, sizeof(testdesc));
++
++        if (!(testdesc.dwFlags & DDSD_WIDTH))
++        {
++            testdesc.dwFlags |= DDSD_WIDTH;
++            testdesc.dwWidth = 512;
++        }
+ 
+-        if (!surf->iface_count)
++        if (!(testdesc.dwFlags & DDSD_HEIGHT))
+         {
+-            WARN("Not enumerating surface %p because it doesn't have any references.\n", surf);
+-            continue;
++            testdesc.dwFlags |= DDSD_HEIGHT;
++            testdesc.dwHeight = 512;
+         }
+ 
+-        if (all || (nomatch != ddraw_match_surface_desc(DDSD, &surf->surface_desc)))
++        if (IDirectDraw7_CreateSurface(iface, &testdesc, &surface, NULL) == DD_OK)
++        {
++            surf = unsafe_impl_from_IDirectDrawSurface7(surface);
++            Callback(NULL, &surf->surface_desc, Context);
++            IDirectDrawSurface7_Release(surface);
++        }
++        else
++            FIXME("Failed to create surface!\n");
++    }
++    else if (Flags & DDENUMSURFACES_DOESEXIST)
++    {
++        DDSURFACEDESC2 desc;
++        struct list *entry, *entry2;
++        BOOL nomatch, all;
++
++        /* a combination of match flags is not allowed */
++        if (match_flags != 0 &&
++                match_flags != DDENUMSURFACES_ALL &&
++                match_flags != DDENUMSURFACES_MATCH &&
++                match_flags != DDENUMSURFACES_NOMATCH)
++            return DDERR_INVALIDPARAMS;
++
++        all = (Flags & DDENUMSURFACES_ALL) != 0;
++        nomatch = (Flags & DDENUMSURFACES_NOMATCH) != 0;
++
++        if (!all && !DDSD)
++            return DDERR_INVALIDPARAMS;
++
++        wined3d_mutex_lock();
++
++        /* Use the _SAFE enumeration, the app may destroy enumerated surfaces */
++        LIST_FOR_EACH_SAFE(entry, entry2, &ddraw->surface_list)
+         {
+-            TRACE("Enumerating surface %p.\n", surf);
+-            desc = surf->surface_desc;
+-            IDirectDrawSurface7_AddRef(&surf->IDirectDrawSurface7_iface);
+-            if (Callback(&surf->IDirectDrawSurface7_iface, &desc, Context) != DDENUMRET_OK)
++            surf = LIST_ENTRY(entry, struct ddraw_surface, surface_list_entry);
++
++            if (!surf->iface_count)
+             {
+-                wined3d_mutex_unlock();
+-                return DD_OK;
++                WARN("Not enumerating surface %p because it doesn't have any references.\n", surf);
++                continue;
++            }
++
++            if (all || (nomatch != ddraw_match_surface_desc(DDSD, &surf->surface_desc)))
++            {
++                TRACE("Enumerating surface %p.\n", surf);
++                desc = surf->surface_desc;
++                IDirectDrawSurface7_AddRef(&surf->IDirectDrawSurface7_iface);
++                if (Callback(&surf->IDirectDrawSurface7_iface, &desc, Context) != DDENUMRET_OK)
++                {
++                    wined3d_mutex_unlock();
++                    return DD_OK;
++                }
+             }
+         }
+-    }
+ 
+-    wined3d_mutex_unlock();
++        wined3d_mutex_unlock();
++    }
++    else
++        return DDERR_INVALIDPARAMS;
+ 
+     return DD_OK;
+ }
+diff --git a/dlls/ddraw/main.c b/dlls/ddraw/main.c
+index 2f5d113..aa50f35 100644
+--- a/dlls/ddraw/main.c
++++ b/dlls/ddraw/main.c
+@@ -936,8 +936,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, void *reserved)
+                 desc.dwSize = sizeof(desc);
+                 for(i = 0; i <= 1; i++)
+                 {
+-                    hr = IDirectDraw7_EnumSurfaces(&ddraw->IDirectDraw7_iface, DDENUMSURFACES_ALL,
+-                            &desc, ddraw, DestroyCallback);
++                    hr = IDirectDraw7_EnumSurfaces(&ddraw->IDirectDraw7_iface,
++                            DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_ALL, &desc, ddraw, DestroyCallback);
+                     if(hr != D3D_OK)
+                         ERR("(%p) EnumSurfaces failed, prepare for trouble\n", ddraw);
+                 }
+diff --git a/dlls/ddraw/tests/d3d.c b/dlls/ddraw/tests/d3d.c
+index ec4197a..457ebbc 100644
+--- a/dlls/ddraw/tests/d3d.c
++++ b/dlls/ddraw/tests/d3d.c
+@@ -57,6 +57,11 @@ typedef struct {
+     int total;
+ } D3D7ECancelTest;
+ 
++typedef struct {
++    UINT found;
++    UINT surfaces;
++} EnumSurfaceTest;
++
+ #define MAX_ENUMERATION_COUNT 10
+ typedef struct
+ {
+@@ -85,17 +90,21 @@ static ULONG getRefcount(IUnknown *iface)
+ 
+ static HRESULT WINAPI SurfaceCounter(IDirectDrawSurface7 *surface, DDSURFACEDESC2 *desc, void *context)
+ {
+-    UINT *num = context;
+-    (*num)++;
+-    IDirectDrawSurface_Release(surface);
++    EnumSurfaceTest *count = context;
++    count->found++;
++    if (surface)
++    {
++        count->surfaces++;
++        IDirectDrawSurface_Release(surface);
++    }
+     return DDENUMRET_OK;
+ }
+ 
+ static BOOL CreateDirect3D(void)
+ {
+     HRESULT rc;
+-    DDSURFACEDESC2 ddsd;
+-    UINT num;
++    DDSURFACEDESC2 ddsd, ddsd2;
++    EnumSurfaceTest count;
+ 
+     rc = pDirectDrawCreateEx(NULL, (void**)&lpDD,
+         &IID_IDirectDraw7, NULL);
+@@ -122,9 +131,174 @@ static BOOL CreateDirect3D(void)
+     if (FAILED(rc))
+         return FALSE;
+ 
+-    num = 0;
+-    IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_ALL | DDENUMSURFACES_DOESEXIST, NULL, &num, SurfaceCounter);
+-    ok(num == 1, "Has %d surfaces, expected 1\n", num);
++    memset(&ddsd2, 0, sizeof(ddsd2));
++    ddsd2.dwSize = sizeof(ddsd2);
++    ddsd2.dwFlags = DDSD_WIDTH | DDSD_HEIGHT;
++    ddsd2.dwWidth = 256;
++    ddsd2.dwHeight = 256;
++
++    /* without search type flags */
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, 0, NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, 0, &ddsd, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_ALL, NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_MATCH, NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_NOMATCH, NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    /* search type DDENUMSURFACES_DOESEXIST */
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST, NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST, &ddsd, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST, &ddsd2, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 1, "Has %d surface descriptions, expected 1\n", count.found);
++    ok(count.surfaces == 1, "Has %d surfaces, expected 1\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_ALL, NULL, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 1, "Has %d surface descriptions, expected 1\n", count.found);
++    ok(count.surfaces == 1, "Has %d surfaces, expected 1\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_MATCH, &ddsd, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_NOMATCH, &ddsd, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 1, "Has %d surface descriptions, expected 1\n", count.found);
++    ok(count.surfaces == 1, "Has %d surfaces, expected 1\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_MATCH, &ddsd2, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 1, "Has %d surface descriptions, expected 1\n", count.found);
++    ok(count.surfaces == 1, "Has %d surfaces, expected 1\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_NOMATCH, &ddsd2, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_ALL | DDENUMSURFACES_MATCH,
++                                   NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_ALL | DDENUMSURFACES_NOMATCH,
++                                   NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_MATCH | DDENUMSURFACES_NOMATCH,
++                                   NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    /* search type DDENUMSURFACES_CANBECREATED */
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_CANBECREATED, &ddsd, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_CANBECREATED | DDENUMSURFACES_ALL, &ddsd, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_CANBECREATED | DDENUMSURFACES_NOMATCH, &ddsd, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_CANBECREATED | DDENUMSURFACES_MATCH, NULL, &count, SurfaceCounter);
++    ok(rc == DDERR_INVALIDPARAMS, "Expected DDERR_INVALIDPARAMS, got %x\n", rc);
++    ok(count.found == 0, "Has %d surface descriptions, expected 0\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_CANBECREATED | DDENUMSURFACES_MATCH, &ddsd, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 1, "Has %d surface descriptions, expected 1\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
++
++    /* combination of DDENUMSURFACES_DOESEXIST and DDENUMSURFACES_CANBECREATED */
++
++    count.found = 0;
++    count.surfaces = 0;
++    rc = IDirectDraw7_EnumSurfaces(lpDD, DDENUMSURFACES_DOESEXIST | DDENUMSURFACES_CANBECREATED | DDENUMSURFACES_MATCH,
++                                   &ddsd, &count, SurfaceCounter);
++    ok(rc == DD_OK, "Expected DD_OK, got %x\n", rc);
++    ok(count.found == 1, "Has %d surface descriptions, expected 1\n", count.found);
++    ok(count.surfaces == 0, "Has %d surfaces, expected 0\n", count.surfaces);
+ 
+     memset(&ddsd, 0, sizeof(ddsd));
+     ddsd.dwSize = sizeof(ddsd);
+diff --git a/dlls/gdi32/dibdrv/opengl.c b/dlls/gdi32/dibdrv/opengl.c
+index a25da208..a0934d1 100644
+--- a/dlls/gdi32/dibdrv/opengl.c
++++ b/dlls/gdi32/dibdrv/opengl.c
+@@ -149,7 +149,8 @@ static int dibdrv_wglDescribePixelFormat( HDC hdc, int fmt, UINT size, PIXELFORM
+ {
+     int ret = sizeof(pixel_formats) / sizeof(pixel_formats[0]);
+ 
+-    if (fmt <= 0 || fmt > ret) return ret;
++    if (!descr) return ret;
++    if (fmt <= 0 || fmt > ret) return ret; /* FIXME: should this be 0? */
+     if (size < sizeof(*descr)) return 0;
+ 
+     memset( descr, 0, sizeof(*descr) );
+diff --git a/dlls/secur32/schannel_macosx.c b/dlls/secur32/schannel_macosx.c
+index cfd2371..c71189c 100644
+--- a/dlls/secur32/schannel_macosx.c
++++ b/dlls/secur32/schannel_macosx.c
+@@ -1016,6 +1016,7 @@ BOOL schan_imp_init(void)
+     supported_protocols = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_0_CLIENT;
+ 
+ #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1080
++#ifdef   SSLGetProtocolVersionMax
+     if(SSLGetProtocolVersionMax != NULL) {
+         SSLProtocol max_protocol;
+         SSLContextRef ctx;
+@@ -1036,6 +1037,7 @@ BOOL schan_imp_init(void)
+         }
+     }
+ #endif
++#endif
+ 
+     return TRUE;
+ }
+diff --git a/dlls/wined3d/Makefile.in b/dlls/wined3d/Makefile.in
+index 655800b..ee0615f 100644
+--- a/dlls/wined3d/Makefile.in
++++ b/dlls/wined3d/Makefile.in
+@@ -11,6 +11,7 @@ C_SRCS = \
+ 	device.c \
+ 	directx.c \
+ 	drawprim.c \
++	dxtn.c \
+ 	gl_compat.c \
+ 	glsl_shader.c \
+ 	nvidia_texture_shader.c \
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index e3601a2..601b040 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -2340,6 +2340,126 @@ static void convert_yuy2_r5g6b5(const BYTE *src, BYTE *dst,
+     }
+ }
+ 
++static void convert_dxt1_a8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_dxt1_x8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_dxt1_a4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4A4_UNORM, w, h);
++}
++
++static void convert_dxt1_x4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4X4_UNORM, w, h);
++}
++
++static void convert_dxt1_a1r5g5b5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5A1_UNORM, w, h);
++}
++
++static void convert_dxt1_x1r5g5b5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5X1_UNORM, w, h);
++}
++
++static void convert_dxt3_a8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_dxt3_x8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_dxt3_a4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4A4_UNORM, w, h);
++}
++
++static void convert_dxt3_x4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4X4_UNORM, w, h);
++}
++
++static void convert_dxt5_a8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_dxt5_x8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_a8r8g8b8_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_x8r8g8b8_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_a1r5g5b5_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5A1_UNORM, w, h);
++}
++
++static void convert_x1r5g5b5_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5X1_UNORM, w, h);
++}
++
++static void convert_a8r8g8b8_dxt3(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_x8r8g8b8_dxt3(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_a8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_x8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
+ struct d3dfmt_converter_desc
+ {
+     enum wined3d_format_id from, to;
+@@ -2356,6 +2476,33 @@ static const struct d3dfmt_converter_desc converters[] =
+     {WINED3DFMT_YUY2,           WINED3DFMT_B5G6R5_UNORM,    convert_yuy2_r5g6b5},
+ };
+ 
++static const struct d3dfmt_converter_desc dxtn_converters[] =
++{
++    /* decode DXT */
++    {WINED3DFMT_DXT1,           WINED3DFMT_B8G8R8A8_UNORM,  convert_dxt1_a8r8g8b8},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B8G8R8X8_UNORM,  convert_dxt1_x8r8g8b8},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B4G4R4A4_UNORM,  convert_dxt1_a4r4g4b4},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B4G4R4X4_UNORM,  convert_dxt1_x4r4g4b4},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B5G5R5A1_UNORM,  convert_dxt1_a1r5g5b5},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B5G5R5X1_UNORM,  convert_dxt1_x1r5g5b5},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B8G8R8A8_UNORM,  convert_dxt3_a8r8g8b8},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B8G8R8X8_UNORM,  convert_dxt3_x8r8g8b8},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B4G4R4A4_UNORM,  convert_dxt3_a4r4g4b4},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B4G4R4X4_UNORM,  convert_dxt3_x4r4g4b4},
++    {WINED3DFMT_DXT5,           WINED3DFMT_B8G8R8A8_UNORM,  convert_dxt5_a8r8g8b8},
++    {WINED3DFMT_DXT5,           WINED3DFMT_B8G8R8X8_UNORM,  convert_dxt5_x8r8g8b8},
++
++    /* encode DXT */
++    {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_DXT1,            convert_a8r8g8b8_dxt1},
++    {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT1,            convert_x8r8g8b8_dxt1},
++    {WINED3DFMT_B5G5R5A1_UNORM, WINED3DFMT_DXT1,            convert_a1r5g5b5_dxt1},
++    {WINED3DFMT_B5G5R5X1_UNORM, WINED3DFMT_DXT1,            convert_x1r5g5b5_dxt1},
++    {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_DXT3,            convert_a8r8g8b8_dxt3},
++    {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT3,            convert_x8r8g8b8_dxt3},
++    {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_DXT5,            convert_a8r8g8b8_dxt5},
++    {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT5,            convert_x8r8g8b8_dxt5}
++};
++
+ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_format_id from,
+         enum wined3d_format_id to)
+ {
+@@ -2367,6 +2514,12 @@ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_fo
+             return &converters[i];
+     }
+ 
++    for (i = 0; i < (sizeof(dxtn_converters) / sizeof(*dxtn_converters)); ++i)
++    {
++        if (dxtn_converters[i].from == from && dxtn_converters[i].to == to)
++            return wined3d_dxtn_supported() ? &dxtn_converters[i] : NULL;
++    }
++
+     return NULL;
+ }
+ 
+diff --git a/dlls/wined3d/wined3d.spec b/dlls/wined3d/wined3d.spec
+index a79d6a6..bc1129f 100644
+--- a/dlls/wined3d/wined3d.spec
++++ b/dlls/wined3d/wined3d.spec
+@@ -289,3 +289,11 @@
+ @ cdecl wined3d_volume_map(ptr ptr ptr long)
+ @ cdecl wined3d_volume_preload(ptr)
+ @ cdecl wined3d_volume_unmap(ptr)
++
++@ cdecl wined3d_dxtn_supported()
++@ cdecl wined3d_dxt1_decode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt1_encode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt3_decode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt3_encode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt5_decode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt5_encode(ptr ptr long long long long long)
+diff --git a/dlls/wined3d/wined3d_main.c b/dlls/wined3d/wined3d_main.c
+index 758ba43..08021a2 100644
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -309,6 +309,8 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
+     if (appkey) RegCloseKey( appkey );
+     if (hkey) RegCloseKey( hkey );
+ 
++    wined3d_dxtn_init();
++
+     return TRUE;
+ }
+ 
+@@ -340,6 +342,9 @@ static BOOL wined3d_dll_destroy(HINSTANCE hInstDLL)
+ 
+     DeleteCriticalSection(&wined3d_wndproc_cs);
+     DeleteCriticalSection(&wined3d_cs);
++
++    wined3d_dxtn_free();
++
+     return TRUE;
+ }
+ 
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index 5d736dd..a355af3 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -3192,6 +3192,9 @@ static inline void context_apply_state(struct wined3d_context *context,
+     state_table[rep].apply(context, state, rep);
+ }
+ 
++BOOL wined3d_dxtn_init(void) DECLSPEC_HIDDEN;
++void wined3d_dxtn_free(void) DECLSPEC_HIDDEN;
++
+ /* The WNDCLASS-Name for the fake window which we use to retrieve the GL capabilities */
+ #define WINED3D_OPENGL_WINDOW_CLASS_NAME "WineD3D_OpenGL"
+ 
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+index 82925c8..9d0af0d 100644
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -705,11 +705,12 @@ - (CGDisplayModeRef)modeMatchingMode:(CGDisplayModeRef)mode forDisplay:(CGDirect
+         NSDictionary* options = nil;
+ 
+ #if defined(MAC_OS_X_VERSION_10_8) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
++#ifdef  kCGDisplayShowDuplicateLowResolutionModes     
+         if (&kCGDisplayShowDuplicateLowResolutionModes != NULL)
+             options = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:TRUE]
+                                                   forKey:(NSString*)kCGDisplayShowDuplicateLowResolutionModes];
+ #endif
+-
++#endif
+         NSArray *modes = [(NSArray*)CGDisplayCopyAllDisplayModes(displayID, (CFDictionaryRef)options) autorelease];
+         for (id candidateModeObject in modes)
+         {
+diff --git a/dlls/winemac.drv/display.c b/dlls/winemac.drv/display.c
+index 10ecf67..f2f4e35 100644
+--- a/dlls/winemac.drv/display.c
++++ b/dlls/winemac.drv/display.c
+@@ -287,6 +287,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
+     CFArrayRef modes = NULL;
+ 
+ #if defined(MAC_OS_X_VERSION_10_8) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
++#ifdef kCGDisplayShowDuplicateLowResolutionModes
+     if (&kCGDisplayShowDuplicateLowResolutionModes != NULL &&
+         CGDisplayModeGetPixelWidth != NULL && CGDisplayModeGetPixelHeight != NULL)
+     {
+@@ -390,6 +391,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
+     }
+     else
+ #endif
++#endif
+         modes = CGDisplayCopyAllDisplayModes(display, NULL);
+ 
+     return modes;
+diff --git a/include/d3dx9shader.h b/include/d3dx9shader.h
+index d665f72..f565432 100644
+--- a/include/d3dx9shader.h
++++ b/include/d3dx9shader.h
+@@ -315,6 +315,7 @@ DWORD WINAPI D3DXGetShaderVersion(const DWORD *byte_code);
+ const char * WINAPI D3DXGetVertexShaderProfile(struct IDirect3DDevice9 *device);
+ HRESULT WINAPI D3DXFindShaderComment(const DWORD *byte_code, DWORD fourcc, const void **data, UINT *size);
+ HRESULT WINAPI D3DXGetShaderSamplers(const DWORD *byte_code, const char **samplers, UINT *count);
++HRESULT WINAPI D3DXGetShaderInputSemantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, UINT *count);
+ 
+ HRESULT WINAPI D3DXAssembleShaderFromFileA(const char *filename, const D3DXMACRO *defines,
+         ID3DXInclude *include, DWORD flags, ID3DXBuffer **shader, ID3DXBuffer **error_messages);
+diff --git a/include/wine/wined3d.h b/include/wine/wined3d.h
+index 8bc4c25..3276799 100644
+--- a/include/wine/wined3d.h
++++ b/include/wine/wined3d.h
+@@ -2606,4 +2606,18 @@ static inline unsigned int wined3d_log2i(unsigned int x)
+ #endif
+ }
+ 
++BOOL wined3d_dxt1_decode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt1_encode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt3_decode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt3_encode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt5_decode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt5_encode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxtn_supported(void);
++
+ #endif /* __WINE_WINED3D_H */
+diff --git a/tools/Makefile.in b/tools/Makefile.in
+index 0f652f0..3ef2484 100644
+--- a/tools/Makefile.in
++++ b/tools/Makefile.in
+@@ -18,13 +18,15 @@ UPDATE_DESKTOP_DATABASE = update-desktop-database
+ all: wineapploader
+ 
+ make_xftmpl$(EXEEXT): make_xftmpl.o
+-	$(CC) $(CFLAGS) -o $@ make_xftmpl.o $(LIBPORT) $(LDFLAGS)
++	@$(CC) $(CFLAGS) -o $@ make_xftmpl.o $(LIBPORT) $(LDFLAGS)
++	@echo "[CC] $@"
+ 
+ .PHONY: install install-lib install-dev uninstall
+ 
+ install install-lib::
+-	$(INSTALL_DATA) $(srcdir)/wine.desktop $(DESTDIR)$(datadir)/applications/wine.desktop
++	@$(INSTALL_DATA) $(srcdir)/wine.desktop $(DESTDIR)$(datadir)/applications/wine.desktop
+ 	-$(UPDATE_DESKTOP_DATABASE)
++	@echo "[install-lib] $@"
+ 
+ install install-dev:: install-man-pages
+ 	$(INSTALL_SCRIPT) $(srcdir)/winemaker $(DESTDIR)$(bindir)/winemaker
+diff --git a/tools/makedep.c b/tools/makedep.c
+index 54aab45..2353c29 100644
+--- a/tools/makedep.c
++++ b/tools/makedep.c
+@@ -1480,7 +1480,7 @@ static char *get_make_variable( struct makefile *make, const char *name )
+  */
+ static char *get_expanded_make_variable( struct makefile *make, const char *name )
+ {
+-    char *p, *end, *var, *expand, *tmp;
++    char *p, *end, *var, *expand, *tmp = NULL;
+ 
+     expand = get_make_variable( make, name );
+     if (!expand) return NULL;
+@@ -1816,7 +1816,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             strarray_add( &res_files, strmake( "%s.res", obj ));
+             output( "%s.res: %s %s\n", obj_dir_path( make, obj ),
+                     tools_path( make, "wrc" ), source->filename );
+-            output( "\t%s -o $@", tools_path( make, "wrc" ) );
++            output( "\t@%s -o $@", tools_path( make, "wrc" ) );
+             if (make->is_win16) output_filename( "-m16" );
+             else output_filenames( target_flags );
+             output_filename( "--nostdinc" );
+@@ -1829,6 +1829,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+                 output_filename( strmake( "--po-dir=%s", top_obj_dir_path( make, "po" )));
+                 output_filename( source->filename );
+                 output( "\n" );
++                output( "\t@echo [WRC] $@\n" );
+                 output( "%s.res:", obj_dir_path( make, obj ));
+                 output_filenames( mo_files );
+                 output( "\n" );
+@@ -1838,6 +1839,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             {
+                 output_filename( source->filename );
+                 output( "\n" );
++                output( "\t@echo [WRC] $@\n" );
+             }
+             output( "%s.res:", obj_dir_path( make, obj ));
+         }
+@@ -1878,7 +1880,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             if (source->file->flags & FLAG_IDL_PROXY) strarray_add( &dlldata_files, source->name );
+             output_filenames_obj_dir( make, targets );
+             output( ": %s\n", tools_path( make, "widl" ));
+-            output( "\t%s -o $@", tools_path( make, "widl" ) );
++            output( "\t@%s -o $@", tools_path( make, "widl" ) );
+             output_filenames( target_flags );
+             output_filenames( includes );
+             output_filenames( make->define_args );
+@@ -1886,6 +1888,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             output_filenames( get_expanded_make_var_array( make, "EXTRAIDLFLAGS" ));
+             output_filename( source->filename );
+             output( "\n" );
++            output( "\t@echo [WIDL] $@\n" );
+             output_filenames_obj_dir( make, targets );
+             output( ": %s", source->filename );
+         }
+@@ -1990,7 +1993,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             if (source->file->flags & FLAG_C_IMPLIB) strarray_add( &implib_objs, strmake( "%s.o", obj ));
+             strarray_add( &object_files, strmake( "%s.o", obj ));
+             output( "%s.o: %s\n", obj_dir_path( make, obj ), source->filename );
+-            output( "\t$(CC) -c -o $@ %s", source->filename );
++            output( "\t@$(CC) -c -o $@ %s", source->filename );
+             output_filenames( includes );
+             output_filenames( make->define_args );
+             output_filenames( extradefs );
+@@ -2003,11 +2006,12 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             output_filenames( cpp_flags );
+             output_filename( "$(CFLAGS)" );
+             output( "\n" );
++            output( "\t@echo [CC] %s\n", source->filename);
+             if (crosstarget && need_cross)
+             {
+                 strarray_add( &crossobj_files, strmake( "%s.cross.o", obj ));
+                 output( "%s.cross.o: %s\n", obj_dir_path( make, obj ), source->filename );
+-                output( "\t$(CROSSCC) -c -o $@ %s", source->filename );
++                output( "\t@$(CROSSCC) -c -o $@ %s", source->filename );
+                 output_filenames( includes );
+                 output_filenames( make->define_args );
+                 output_filenames( extradefs );
+@@ -2015,6 +2019,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+                 output_filenames( cpp_flags );
+                 output_filename( "$(CFLAGS)" );
+                 output( "\n" );
++              output( "\t@echo [CROSSCC] %s\n", source->filename);
+             }
+             if (make->testdll && !strcmp( ext, "c" ) && !(source->file->flags & FLAG_GENERATED))
+             {
+@@ -2043,7 +2048,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output( "%s: %s", obj_dir_path( make, "rsrc.pot" ), tools_path( make, "wrc" ) );
+         output_filenames( po_files );
+         output( "\n" );
+-        output( "\t%s -O pot -o $@", tools_path( make, "wrc" ));
++        output( "\t@%s -O pot -o $@", tools_path( make, "wrc" ));
+         if (make->is_win16) output_filename( "-m16" );
+         else output_filenames( target_flags );
+         output_filename( "--nostdinc" );
+@@ -2051,6 +2056,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output_filenames( make->define_args );
+         output_filenames( po_files );
+         output( "\n" );
++      output( "\t@echo [WRC] $@\n" );
+         strarray_add( &clean_files, "rsrc.pot" );
+     }
+ 
+@@ -2059,9 +2065,10 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output( "%s: %s", obj_dir_path( make, "msg.pot" ), tools_path( make, "wmc" ));
+         output_filenames( mc_files );
+         output( "\n" );
+-        output( "\t%s -O pot -o $@", tools_path( make, "wmc" ));
++        output( "\t@%s -O pot -o $@", tools_path( make, "wmc" ));
+         output_filenames( mc_files );
+         output( "\n" );
++        output( "\t@echo [WMC] $@\n" );
+         strarray_add( &clean_files, "msg.pot" );
+     }
+ 
+@@ -2069,9 +2076,10 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+     {
+         output( "%s: %s %s\n", obj_dir_path( make, "dlldata.c" ),
+                 tools_path( make, "widl" ), src_dir_path( make, "Makefile.in" ));
+-        output( "\t%s --dlldata-only -o $@", tools_path( make, "widl" ));
++        output( "\t@%s --dlldata-only -o $@", tools_path( make, "widl" ));
+         output_filenames( dlldata_files );
+         output( "\n" );
++        output( "\t@echo [WIDL] $@\n" );
+     }
+ 
+     if (make->module && !make->staticlib)
+@@ -2108,7 +2116,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output_filenames_obj_dir( make, object_files );
+         output_filenames_obj_dir( make, res_files );
+         output( "\n" );
+-        output( "\t%s -o $@", tools_path( make, "winegcc" ));
++        output( "\t@%s -o $@", tools_path( make, "winegcc" ));
+         output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
+         if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
+         output_filenames( target_flags );
+@@ -2124,6 +2132,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output_filenames( all_libs );
+         output_filename( "$(LDFLAGS)" );
+         output( "\n" );
++        output( "\t@echo [WINEGCC] $@\n" );
+ 
+         if (spec_file && make->importlib)
+         {
+@@ -2256,7 +2265,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         strarray_add( &all_targets, strmake( "%s%s", testmodule, dll_ext ));
+         strarray_add( &clean_files, strmake( "%s%s", stripped, dll_ext ));
+         output( "%s%s:\n", obj_dir_path( make, testmodule ), dll_ext );
+-        output( "\t%s -o $@", tools_path( make, "winegcc" ));
++        output( "\t@%s -o $@", tools_path( make, "winegcc" ));
+         output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
+         if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
+         output_filenames( target_flags );
+@@ -2267,8 +2276,9 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output_filenames( all_libs );
+         output_filename( "$(LDFLAGS)" );
+         output( "\n" );
++        output( "\t@echo [WINEGCC] $@\n" );
+         output( "%s%s:\n", obj_dir_path( make, stripped ), dll_ext );
+-        output( "\t%s -o $@", tools_path( make, "winegcc" ));
++        output( "\t@%s -o $@", tools_path( make, "winegcc" ));
+         output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
+         if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
+         output_filenames( target_flags );
+@@ -2280,6 +2290,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+         output_filenames( all_libs );
+         output_filename( "$(LDFLAGS)" );
+         output( "\n" );
++        output( "\t@echo [WINEGCC] $@\n" );
+         output( "%s%s %s%s:", obj_dir_path( make, testmodule ), dll_ext,
+                 obj_dir_path( make, stripped ), dll_ext );
+         output_filenames_obj_dir( make, object_files );
+@@ -2302,7 +2313,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             output_filenames_obj_dir( make, crossobj_files );
+             output_filenames_obj_dir( make, res_files );
+             output( "\n" );
+-            output( "\t%s -o $@ -b %s", tools_path( make, "winegcc" ), crosstarget );
++            output( "\t@%s -o $@ -b %s", tools_path( make, "winegcc" ), crosstarget );
+             output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
+             if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
+             output_filename( "--lib-suffix=.cross.a" );
+@@ -2311,6 +2322,7 @@ static struct strarray output_sources( struct makefile *make, struct strarray *t
+             output_filenames( all_libs );
+             output_filename( "$(LDFLAGS)" );
+             output( "\n" );
++            output( "\t@echo [WINEGCC] $@\n" );
+             strarray_add( &phony_targets, obj_dir_path( make, "crosstest" ));
+             if (make->obj_dir) output( "crosstest: %s\n", obj_dir_path( make, "crosstest" ));
+         }
