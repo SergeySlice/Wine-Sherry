@@ -1,0 +1,6 @@
+This is a collection of patches used in Sherry project.
+They are mostly obsolete. They can't be applied to recent wine. They was developed for older wine revisions, each patch for own revision. I will not revise them and not rebase to new revision.
+Times to times I reverted some patches as nor more needed or no more working or no more compatible. Current Sherry sources can't be reproduced by applying these patches.
+Anyway this is a history.
+
+May be in future I have to begin ab ovo, erase the whole sherry sources and begin from clean winehq applying these patches one by one and adopting them to new environment.
