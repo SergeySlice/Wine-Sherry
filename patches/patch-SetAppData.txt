@@ -1,0 +1,94 @@
+diff --git a/dlls/d3drm/viewport.c b/dlls/d3drm/viewport.c
+index 58de085..b7064f8 100644
+--- a/dlls/d3drm/viewport.c
++++ b/dlls/d3drm/viewport.c
+@@ -38,6 +38,7 @@ struct d3drm_viewport
+     D3DVALUE front;
+     D3DVALUE field;
+     D3DRMPROJECTIONTYPE projection;
++    DWORD user_data;
+ };
+ 
+ static inline struct d3drm_viewport *impl_from_IDirect3DRMViewport(IDirect3DRMViewport *iface)
+@@ -125,16 +126,24 @@ static HRESULT WINAPI d3drm_viewport1_DeleteDestroyCallback(IDirect3DRMViewport
+ 
+ static HRESULT WINAPI d3drm_viewport1_SetAppData(IDirect3DRMViewport *iface, DWORD data)
+ {
+-    FIXME("iface %p, data %#x stub!\n", iface, data);
++    struct d3drm_viewport *viewport = impl_from_IDirect3DRMViewport(iface);
++    FIXME("iface %p, data %#x semistub!\n", iface, data);
++    
++    viewport->user_data = data;
+ 
+-    return E_NOTIMPL;
++    return S_OK; //E_NOTIMPL;
+ }
+ 
+-static DWORD WINAPI d3drm_viewport1_GetAppData(IDirect3DRMViewport *iface)
++static HRESULT WINAPI d3drm_viewport1_GetAppData(IDirect3DRMViewport *iface, DWORD *data)
+ {
+-    FIXME("iface %p.\n", iface);
++    struct d3drm_viewport *viewport = impl_from_IDirect3DRMViewport(iface);
++    FIXME("iface %p., data=%#x\n", iface, viewport?viewport->user_data:0);
+ 
+-    return 0;
++    if (data) {
++        *data = viewport?viewport->user_data:0;
++    }
++
++    return S_OK; //0;
+ }
+ 
+ static HRESULT WINAPI d3drm_viewport1_SetName(IDirect3DRMViewport *iface, const char *name)
+@@ -478,16 +487,24 @@ static HRESULT WINAPI d3drm_viewport2_DeleteDestroyCallback(IDirect3DRMViewport2
+ 
+ static HRESULT WINAPI d3drm_viewport2_SetAppData(IDirect3DRMViewport2 *iface, DWORD data)
+ {
+-    FIXME("iface %p, data %#x stub!\n", iface, data);
+-
+-    return E_NOTIMPL;
++    struct d3drm_viewport *viewport = impl_from_IDirect3DRMViewport2(iface);
++    FIXME("iface %p, data %p stub!\n", iface, data);
++    
++    viewport->user_data = data;
++    
++    return S_OK;
+ }
+ 
+-static DWORD WINAPI d3drm_viewport2_GetAppData(IDirect3DRMViewport2 *iface)
++static HRESULT WINAPI d3drm_viewport2_GetAppData(IDirect3DRMViewport2 *iface, DWORD *data)
+ {
+-    FIXME("iface %p stub!\n", iface);
++    struct d3drm_viewport *viewport = impl_from_IDirect3DRMViewport2(iface);
++    FIXME("iface %p., data=%#x\n", iface, viewport?viewport->user_data:0);
++    
++    if (data) {
++        *data = viewport?viewport->user_data:0;
++    }
+ 
+-    return 0;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI d3drm_viewport2_SetName(IDirect3DRMViewport2 *iface, const char *name)
+@@ -820,6 +837,7 @@ HRESULT Direct3DRMViewport_create(REFIID riid, IUnknown **out)
+     object->IDirect3DRMViewport_iface.lpVtbl = &d3drm_viewport1_vtbl;
+     object->IDirect3DRMViewport2_iface.lpVtbl = &d3drm_viewport2_vtbl;
+     object->ref = 1;
++    object->user_data = 0;
+ 
+     if (IsEqualGUID(riid, &IID_IDirect3DRMViewport2))
+         *out = (IUnknown *)&object->IDirect3DRMViewport2_iface;
+diff --git a/include/d3drmobj.h b/include/d3drmobj.h
+index 28340fb..b9440d9 100644
+--- a/include/d3drmobj.h
++++ b/include/d3drmobj.h
+@@ -206,7 +206,7 @@ DECLARE_INTERFACE_(IDirect3DRMObject,IUnknown)
+     STDMETHOD(AddDestroyCallback)(THIS_ D3DRMOBJECTCALLBACK cb, void *ctx) PURE;
+     STDMETHOD(DeleteDestroyCallback)(THIS_ D3DRMOBJECTCALLBACK cb, void *ctx) PURE;
+     STDMETHOD(SetAppData)(THIS_ DWORD data) PURE;
+-    STDMETHOD_(DWORD, GetAppData)(THIS) PURE;
++    STDMETHOD(GetAppData)(THIS_ DWORD *data) PURE;
+     STDMETHOD(SetName)(THIS_ const char *name) PURE;
+     STDMETHOD(GetName)(THIS_ DWORD *size, char *name) PURE;
+     STDMETHOD(GetClassName)(THIS_ DWORD *size, char *name) PURE;
