@@ -1,0 +1,156 @@
+From 09ee3dbfd3226888860fce1f4361335be8b41242 Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Sun, 6 Mar 2016 02:45:08 +0300
+Subject: [PATCH 8/9] d3dx9: implement IsParameterUsed method in effect.
+
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/d3dx9_36/d3dx9_private.h |  2 +
+ dlls/d3dx9_36/effect.c        | 85 ++++++++++++++++++++++++++++++++++++++++++-
+ dlls/d3dx9_36/preshader.c     | 15 ++++++--
+ 3 files changed, 97 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/d3dx9_36/d3dx9_private.h b/dlls/d3dx9_36/d3dx9_private.h
+index 97d9544..23cc88a 100644
+--- a/dlls/d3dx9_36/d3dx9_private.h
++++ b/dlls/d3dx9_36/d3dx9_private.h
+@@ -149,5 +149,7 @@ HRESULT d3dx_param_eval_set_shader_constants(struct IDirect3DDevice9 *device,
+         struct d3dx_param_eval *peval) DECLSPEC_HIDDEN;
+ HRESULT d3dx_param_eval_get_shader_parameters(struct d3dx_param_eval *peval, struct d3dx_parameter ***param,
+         unsigned int *nparam, D3DXCONSTANT_DESC **cdesc) DECLSPEC_HIDDEN;
++HRESULT d3dx_param_eval_get_preshader_parameters(struct d3dx_param_eval *peval, struct d3dx_parameter ***param,
++        unsigned int *nparam, D3DXCONSTANT_DESC **cdesc) DECLSPEC_HIDDEN;
+ 
+ #endif /* __WINE_D3DX9_PRIVATE_H */
+diff --git a/dlls/d3dx9_36/effect.c b/dlls/d3dx9_36/effect.c
+index 4b1f1fa..aa23cba 100644
+--- a/dlls/d3dx9_36/effect.c
++++ b/dlls/d3dx9_36/effect.c
+@@ -3565,15 +3565,96 @@ static HRESULT WINAPI ID3DXEffectImpl_FindNextValidTechnique(ID3DXEffect* iface,
+     return E_NOTIMPL;
+ }
+ 
++typedef BOOL (*walk_parameter_tree_func)(void *data, struct d3dx_parameter *param);
++static BOOL walk_state(struct ID3DXEffectImpl *effect, struct d3dx_pass *pass, struct d3dx_state *state,
++        walk_parameter_tree_func par_func, void *data);
++
++static BOOL walk_parameter_tree(struct ID3DXEffectImpl *effect, struct d3dx_pass *pass,
++        struct d3dx_parameter *param, walk_parameter_tree_func par_func, void *data)
++{
++    unsigned int i;
++
++    if (par_func(data, param))
++        return TRUE;
++
++    if (param->class == D3DXPC_OBJECT && param->type == D3DXPT_SAMPLER)
++    {
++        struct d3dx_sampler *sampler;
++
++        sampler = (struct d3dx_sampler *)param->data;
++        for (i = 0; i < sampler->state_count; i++)
++            if (walk_state(effect, pass, &sampler->states[i], par_func, data))
++                return TRUE;
++        return FALSE;
++    }
++
++    if (param->element_count)
++    {
++        for (i = 0; i < param->element_count; i++)
++            if (walk_parameter_tree(effect, pass, &param->members[i], par_func, data)) return TRUE;
++        return FALSE;
++    }
++    for (i = 0; i < param->member_count; i++)
++        if (walk_parameter_tree(effect, pass, &param->members[i], par_func, data)) return TRUE;
++    return FALSE;
++}
++
++static BOOL walk_state(struct ID3DXEffectImpl *effect, struct d3dx_pass *pass, struct d3dx_state *state,
++        walk_parameter_tree_func par_func, void *data)
++{
++    void *param_value;
++    struct d3dx_parameter *par;
++    unsigned int k, npars;
++    struct d3dx_parameter **pars;
++
++    d3dx9_get_param_value_ptr(effect, pass, state, &param_value, &par);
++    if (walk_parameter_tree(effect, pass, par, par_func, data))
++        return TRUE;
++
++    if (par->param_eval)
++    {
++        d3dx_param_eval_get_shader_parameters(par->param_eval, &pars, &npars, NULL);
++        for (k = 0; k < npars; k++)
++            if (walk_parameter_tree(effect, pass, pars[k], par_func, data))
++                return TRUE;
++        d3dx_param_eval_get_preshader_parameters(par->param_eval, &pars, &npars, NULL);
++        for (k = 0; k < npars; k++)
++            if (walk_parameter_tree(effect, pass, pars[k], par_func, data))
++                return TRUE;
++    }
++    return FALSE;
++}
++
++BOOL compare_par_ptr(void *par_comp, struct d3dx_parameter *param)
++{
++    return par_comp == (void *)param;
++}
++
+ static BOOL WINAPI ID3DXEffectImpl_IsParameterUsed(ID3DXEffect* iface, D3DXHANDLE parameter, D3DXHANDLE technique)
+ {
+     struct ID3DXEffectImpl *effect = impl_from_ID3DXEffect(iface);
++    unsigned int i, j;
+     struct d3dx_parameter *param = get_valid_parameter(&effect->base_effect, parameter);
++    struct d3dx_technique *tech = get_valid_technique(&effect->base_effect, technique);
++    struct d3dx_pass *pass;
+ 
+-    FIXME("iface %p, parameter %p, technique %p stub.\n", iface, parameter, technique);
++    TRACE("iface %p, parameter %p, technique %p.\n", iface, parameter, technique);
+     TRACE("param %p (%s).\n", param, param ? debugstr_a(param->name) : "");
+ 
+-    return TRUE;
++    for (i = 0; i < tech->pass_count; i++)
++    {
++        pass = &tech->passes[i];
++        for (j = 0; j < pass->state_count; j++)
++        {
++            if (walk_state(effect, pass, &pass->states[j], compare_par_ptr, param))
++            {
++                TRACE("technique %p, parameter %s, TRUE.\n", tech, param->name);
++                return TRUE;
++            }
++        }
++    }
++    TRACE("technique %p, parameter %s, FALSE.\n", tech, param->name);
++    return FALSE;
+ }
+ 
+ static HRESULT WINAPI ID3DXEffectImpl_Begin(ID3DXEffect *iface, UINT *passes, DWORD flags)
+diff --git a/dlls/d3dx9_36/preshader.c b/dlls/d3dx9_36/preshader.c
+index 31a44ec..249ab0e 100644
+--- a/dlls/d3dx9_36/preshader.c
++++ b/dlls/d3dx9_36/preshader.c
+@@ -1101,9 +1101,18 @@ HRESULT d3dx_param_eval_set_shader_constants(struct IDirect3DDevice9 *device, st
+ HRESULT d3dx_param_eval_get_shader_parameters(struct d3dx_param_eval *peval, struct d3dx_parameter ***param,
+         unsigned int *nparam, D3DXCONSTANT_DESC **cdesc)
+ {
+-    *nparam = peval->shader_inputs.ninputs;
+-    *param = peval->shader_inputs.inputs_param;
+-    *cdesc = peval->shader_inputs.inputs;
++    if (nparam) *nparam = peval->shader_inputs.ninputs;
++    if (param) *param = peval->shader_inputs.inputs_param;
++    if (cdesc) *cdesc = peval->shader_inputs.inputs;
++    return D3D_OK;
++}
++
++HRESULT d3dx_param_eval_get_preshader_parameters(struct d3dx_param_eval *peval, struct d3dx_parameter ***param,
++        unsigned int *nparam, D3DXCONSTANT_DESC **cdesc)
++{
++    if (nparam) *nparam = peval->pres.inputs.ninputs;
++    if (param) *param = peval->pres.inputs.inputs_param;
++    if (cdesc) *cdesc = peval->pres.inputs.inputs;
+     return D3D_OK;
+ }
+ 
+-- 
+2.5.0
+
