@@ -1,0 +1,230 @@
+From e4dfdb7c2cc4264bbe89ef938c939a3965f654ca Mon Sep 17 00:00:00 2001
+From: Tony Wasserka <tony.wasserka@freenet.de>
+Date: Mon, 17 Aug 2009 12:26:37 +0200
+Subject: [PATCH] d3dx9: Apply current transform in ID3DXSprite_Draw instead of
+ ID3DXSprite_Flush. d3dx9: Allocate 256 instead of 32 sprites on the first
+ Draw call
+
+---
+ dlls/d3dx9_36/d3dx9_36_private.h |  12 ++--
+ dlls/d3dx9_36/sprite.c           | 137 ++++++++++++++++-----------------------
+ 2 files changed, 64 insertions(+), 85 deletions(-)
+
+diff --git a/dlls/d3dx9_36/d3dx9_36_private.h b/dlls/d3dx9_36/d3dx9_36_private.h
+index 9dde908..153d0df 100644
+--- a/dlls/d3dx9_36/d3dx9_36_private.h
++++ b/dlls/d3dx9_36/d3dx9_36_private.h
+@@ -147,13 +147,15 @@ typedef struct ID3DXMatrixStackImpl
+ } ID3DXMatrixStackImpl;
+ 
+ /*ID3DXSprite */
++typedef struct _SPRITEVERTEX {
++    D3DXVECTOR3 pos;
++    DWORD col;
++    D3DXVECTOR2 tex;
++} SPRITEVERTEX;
++
+ typedef struct _SPRITE {
+     LPDIRECT3DTEXTURE9 texture;
+-    UINT texw, texh;
+-    RECT rect;
+-    D3DXVECTOR3 center;
+-    D3DXVECTOR3 pos;
+-    D3DCOLOR color;
++    SPRITEVERTEX aVertices[4];
+ } SPRITE;
+ 
+ typedef struct ID3DXSpriteImpl
+diff --git a/dlls/d3dx9_36/sprite.c b/dlls/d3dx9_36/sprite.c
+index ce9938e..bb211e9 100644
+--- a/dlls/d3dx9_36/sprite.c
++++ b/dlls/d3dx9_36/sprite.c
+@@ -25,12 +25,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
+ /* the combination of all possible D3DXSPRITE flags */
+ #define D3DXSPRITE_FLAGLIMIT 511
+ 
+-typedef struct _SPRITEVERTEX {
+-    D3DXVECTOR3 pos;
+-    DWORD col;
+-    D3DXVECTOR2 tex;
+-} SPRITEVERTEX;
+-
+ static HRESULT WINAPI ID3DXSpriteImpl_QueryInterface(LPD3DXSPRITE iface, REFIID riid, LPVOID *object)
+ {
+     ID3DXSpriteImpl *This=(ID3DXSpriteImpl*)iface;
+@@ -269,106 +263,89 @@ static HRESULT WINAPI ID3DXSpriteImpl_Draw(LPD3DXSPRITE iface, LPDIRECT3DTEXTURE
+ {
+     ID3DXSpriteImpl *This=(ID3DXSpriteImpl*)iface;
+     D3DSURFACE_DESC texdesc;
++    UINT i;
+     TRACE("(%p): relay\n", This);
+ 
+     if(texture==NULL) return D3DERR_INVALIDCALL;
+     if(!This->ready) return D3DERR_INVALIDCALL;
+ 
+     if(This->allocated_sprites==0) {
+-        This->sprites=HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 32*sizeof(SPRITE));
+-        This->allocated_sprites=32;
++        This->allocated_sprites=256;
++        This->sprites=HeapAlloc(GetProcessHeap(), 0, This->allocated_sprites*sizeof(SPRITE));
+     } else if(This->allocated_sprites<=This->sprite_count) {
+         This->allocated_sprites=This->allocated_sprites*3/2;
+-        This->sprites=HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, This->sprites, This->allocated_sprites*sizeof(SPRITE));
++        This->sprites=HeapReAlloc(GetProcessHeap(), 0, This->sprites, This->allocated_sprites*sizeof(SPRITE));
+     }
+     This->sprites[This->sprite_count].texture=texture;
+     if(!(This->flags & D3DXSPRITE_DO_NOT_ADDREF_TEXTURE))
+         IDirect3DTexture9_AddRef(texture);
+ 
+-    /* Reuse the texture desc if possible */
+-    if(This->sprite_count) {
+-        if(This->sprites[This->sprite_count-1].texture!=texture) {
+-            IDirect3DTexture9_GetLevelDesc(texture, 0, &texdesc);
+-        } else {
+-            texdesc.Width=This->sprites[This->sprite_count-1].texw;
+-            texdesc.Height=This->sprites[This->sprite_count-1].texh;
+-        }
+-    } else IDirect3DTexture9_GetLevelDesc(texture, 0, &texdesc);
++    for(i = 0;i < 4;i++) {
++        ZeroMemory(&This->sprites[This->sprite_count].aVertices[i].pos, sizeof(D3DXVECTOR3));
++        This->sprites[This->sprite_count].aVertices[i].col = color;
++    }
+ 
+-    This->sprites[This->sprite_count].texw=texdesc.Width;
+-    This->sprites[This->sprite_count].texh=texdesc.Height;
++    IDirect3DTexture9_GetLevelDesc(texture, 0, &texdesc);
+ 
+     if(rect==NULL) {
+-        This->sprites[This->sprite_count].rect.left=0;
+-        This->sprites[This->sprite_count].rect.top=0;
+-        This->sprites[This->sprite_count].rect.right=texdesc.Width;
+-        This->sprites[This->sprite_count].rect.bottom=texdesc.Height;
+-    } else This->sprites[This->sprite_count].rect=*rect;
+-
+-    if(center==NULL) {
+-        This->sprites[This->sprite_count].center.x=0.0f;
+-        This->sprites[This->sprite_count].center.y=0.0f;
+-        This->sprites[This->sprite_count].center.z=0.0f;
+-    } else This->sprites[This->sprite_count].center=*center;
+-
+-    if(position==NULL) {
+-        This->sprites[This->sprite_count].pos.x=0.0f;
+-        This->sprites[This->sprite_count].pos.y=0.0f;
+-        This->sprites[This->sprite_count].pos.z=0.0f;
+-    } else This->sprites[This->sprite_count].pos=*position;
+-
+-    This->sprites[This->sprite_count].color=color;
+-    This->sprite_count++;
++        This->sprites[This->sprite_count].aVertices[0].tex.x = 0.f;
++        This->sprites[This->sprite_count].aVertices[0].tex.y = 0.f;
++        This->sprites[This->sprite_count].aVertices[1].tex.x = 1.f;
++        This->sprites[This->sprite_count].aVertices[1].tex.y = 0.f;
++        This->sprites[This->sprite_count].aVertices[2].tex.x = 1.f;
++        This->sprites[This->sprite_count].aVertices[2].tex.y = 1.f;
++        This->sprites[This->sprite_count].aVertices[3].tex.x = 0.f;
++        This->sprites[This->sprite_count].aVertices[3].tex.y = 1.f;
++
++        This->sprites[This->sprite_count].aVertices[1].pos.x = texdesc.Width;
++        This->sprites[This->sprite_count].aVertices[2].pos.x = texdesc.Width;
++        This->sprites[This->sprite_count].aVertices[2].pos.y = texdesc.Height;
++        This->sprites[This->sprite_count].aVertices[3].pos.y = texdesc.Height;
++    } else {
++        This->sprites[This->sprite_count].aVertices[0].tex.x = (float)rect->left / (float)texdesc.Width;
++        This->sprites[This->sprite_count].aVertices[0].tex.y = (float)rect->top / (float)texdesc.Height;
++        This->sprites[This->sprite_count].aVertices[1].tex.x = (float)rect->right / (float)texdesc.Width;
++        This->sprites[This->sprite_count].aVertices[1].tex.y = (float)rect->top / (float)texdesc.Height;
++        This->sprites[This->sprite_count].aVertices[2].tex.x = (float)rect->right / (float)texdesc.Width;
++        This->sprites[This->sprite_count].aVertices[2].tex.y = (float)rect->bottom / (float)texdesc.Height;
++        This->sprites[This->sprite_count].aVertices[3].tex.x = (float)rect->left / (float)texdesc.Width;
++        This->sprites[This->sprite_count].aVertices[3].tex.y = (float)rect->bottom / (float)texdesc.Height;
++
++        This->sprites[This->sprite_count].aVertices[1].pos.x = rect->right - rect->left;
++        This->sprites[This->sprite_count].aVertices[2].pos.x = rect->right - rect->left;
++        This->sprites[This->sprite_count].aVertices[2].pos.y = rect->bottom - rect->top;
++        This->sprites[This->sprite_count].aVertices[3].pos.y = rect->bottom - rect->top;
++    }
++
++    for(i = 0;i < 4;i++) {
++        if(center != NULL) {
++            This->sprites[This->sprite_count].aVertices[i].pos.x -= center->x;
++            This->sprites[This->sprite_count].aVertices[i].pos.y -= center->y;
++            This->sprites[This->sprite_count].aVertices[i].pos.z -= center->z;
++        }
++        if(position != NULL) {
++            This->sprites[This->sprite_count].aVertices[i].pos.x += position->x;
++            This->sprites[This->sprite_count].aVertices[i].pos.y += position->y;
++            This->sprites[This->sprite_count].aVertices[i].pos.z += position->z;
++        }
++    }
+ 
++    D3DXVec3TransformCoordArray(&This->sprites[This->sprite_count].aVertices[0].pos, sizeof(SPRITEVERTEX), &This->sprites[This->sprite_count].aVertices[0].pos, sizeof(SPRITEVERTEX), &This->transform, 4);
++    D3DXVec3TransformCoordArray(&This->sprites[This->sprite_count].aVertices[0].pos, sizeof(SPRITEVERTEX), &This->sprites[This->sprite_count].aVertices[0].pos, sizeof(SPRITEVERTEX), &This->view, 4);
++
++    This->sprite_count++;
+     return D3D_OK;
+ }
+ 
+ static HRESULT WINAPI ID3DXSpriteImpl_Flush(LPD3DXSPRITE iface)
+ {
+     ID3DXSpriteImpl *This=(ID3DXSpriteImpl*)iface;
+-    SPRITEVERTEX *vertices;
+-    int i;
++    UINT i;
+     TRACE("(%p): relay\n", This);
+ 
+     if(!This->ready) return D3DERR_INVALIDCALL;
+     if(!This->sprite_count) return D3D_OK;
+ 
+-/* TODO: use of a vertex buffer here */
+-    vertices=HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(SPRITEVERTEX)*4*This->sprite_count);
+-
+-    for(i=0;i<This->sprite_count;i++) {
+-        float spritewidth=(float)This->sprites[i].rect.right-(float)This->sprites[i].rect.left;
+-        float spriteheight=(float)This->sprites[i].rect.bottom-(float)This->sprites[i].rect.top;
+-
+-        vertices[4*i  ].pos.x = This->sprites[i].pos.x - This->sprites[i].center.x;
+-        vertices[4*i  ].pos.y = This->sprites[i].pos.y - This->sprites[i].center.y;
+-        vertices[4*i  ].pos.z = This->sprites[i].pos.z - This->sprites[i].center.z;
+-        vertices[4*i+1].pos.x = spritewidth + This->sprites[i].pos.x - This->sprites[i].center.x;
+-        vertices[4*i+1].pos.y = This->sprites[i].pos.y - This->sprites[i].center.y;
+-        vertices[4*i+1].pos.z = This->sprites[i].pos.z - This->sprites[i].center.z;
+-        vertices[4*i+2].pos.x = spritewidth + This->sprites[i].pos.x - This->sprites[i].center.x;
+-        vertices[4*i+2].pos.y = spriteheight + This->sprites[i].pos.y - This->sprites[i].center.y;
+-        vertices[4*i+2].pos.z = This->sprites[i].pos.z - This->sprites[i].center.z;
+-        vertices[4*i+3].pos.x = This->sprites[i].pos.x - This->sprites[i].center.x;
+-        vertices[4*i+3].pos.y = spriteheight + This->sprites[i].pos.y - This->sprites[i].center.y;
+-        vertices[4*i+3].pos.z = This->sprites[i].pos.z - This->sprites[i].center.z;
+-        vertices[4*i  ].col   = This->sprites[i].color;
+-        vertices[4*i+1].col   = This->sprites[i].color;
+-        vertices[4*i+2].col   = This->sprites[i].color;
+-        vertices[4*i+3].col   = This->sprites[i].color;
+-        vertices[4*i  ].tex.x = (float)This->sprites[i].rect.left / (float)This->sprites[i].texw;
+-        vertices[4*i  ].tex.y = (float)This->sprites[i].rect.top / (float)This->sprites[i].texh;
+-        vertices[4*i+1].tex.x = (float)This->sprites[i].rect.right / (float)This->sprites[i].texw;
+-        vertices[4*i+1].tex.y = (float)This->sprites[i].rect.top / (float)This->sprites[i].texh;
+-        vertices[4*i+2].tex.x = (float)This->sprites[i].rect.right / (float)This->sprites[i].texw;
+-        vertices[4*i+2].tex.y = (float)This->sprites[i].rect.bottom / (float)This->sprites[i].texh;
+-        vertices[4*i+3].tex.x = (float)This->sprites[i].rect.left / (float)This->sprites[i].texw;
+-        vertices[4*i+3].tex.y = (float)This->sprites[i].rect.bottom / (float)This->sprites[i].texh;
+-    }
+-
+-    D3DXVec3TransformCoordArray(&vertices[0].pos, sizeof(SPRITEVERTEX), &vertices[0].pos, sizeof(SPRITEVERTEX), &This->transform, 4*This->sprite_count);
+-    D3DXVec3TransformCoordArray(&vertices[0].pos, sizeof(SPRITEVERTEX), &vertices[0].pos, sizeof(SPRITEVERTEX), &This->view,      4*This->sprite_count);
+-
+     IDirect3DDevice9_SetVertexDeclaration(This->device, This->vdecl);
+ 
+     for(i=0;i<This->sprite_count;i++) {
+@@ -377,9 +354,9 @@ static HRESULT WINAPI ID3DXSpriteImpl_Flush(LPD3DXSPRITE iface)
+         else if(This->sprites[i].texture!=This->sprites[i-1].texture)
+             IDirect3DDevice9_SetTexture(This->device, 0, (LPDIRECT3DBASETEXTURE9)(This->sprites[i].texture));
+ 
+-        IDirect3DDevice9_DrawPrimitiveUP(This->device, D3DPT_TRIANGLEFAN, 2, vertices+4*i, sizeof(SPRITEVERTEX));
++        /* TODO: use of a vertex buffer instead */
++        IDirect3DDevice9_DrawPrimitiveUP(This->device, D3DPT_TRIANGLEFAN, 2, This->sprites[i].aVertices, sizeof(SPRITEVERTEX));
+     }
+-    HeapFree(GetProcessHeap(), 0, vertices);
+ 
+     if(!(This->flags & D3DXSPRITE_DO_NOT_ADDREF_TEXTURE))
+         for(i=0;i<This->sprite_count;i++)
+-- 
+2.5.5.GIT

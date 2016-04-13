@@ -1,0 +1,20 @@
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index 2ee14a3..bba5595 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -76,7 +76,7 @@ static enum wined3d_event_query_result wined3d_event_query_test(const struct win
+                 break;
+ 
+             case GL_TIMEOUT_EXPIRED:
+-                ret = WINED3D_EVENT_QUERY_WAITING;
++                ret = WINED3D_EVENT_QUERY_OK;
+                 break;
+ 
+             case GL_WAIT_FAILED:
+@@ -400,6 +400,7 @@ static HRESULT wined3d_event_query_ops_get_data(struct wined3d_query *query,
+             break;
+ 
+         case WINED3D_EVENT_QUERY_WAITING:
++            FIXME("Event query is waiting.\n");
+             *data = FALSE;
+             break;
