@@ -1,0 +1,35 @@
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 33dce4c..007a71c 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -3531,7 +3531,7 @@ const char *debug_d3ddevicetype(enum wined3d_device_type device_type)
+ 
+ const char *debug_d3dusage(DWORD usage)
+ {
+-    char buf[333];
++    char buf[483];
+ 
+     buf[0] = '\0';
+ #define WINED3DUSAGE_TO_STR(u) if (usage & u) { strcat(buf, " | "#u); usage &= ~u; }
+@@ -3548,8 +3548,11 @@ const char *debug_d3dusage(DWORD usage)
+     WINED3DUSAGE_TO_STR(WINED3DUSAGE_DMAP);
+     WINED3DUSAGE_TO_STR(WINED3DUSAGE_STATICDECL);
+     WINED3DUSAGE_TO_STR(WINED3DUSAGE_OVERLAY);
++    WINED3DUSAGE_TO_STR(WINED3DUSAGE_TEXTURE);
++    WINED3DUSAGE_TO_STR(WINED3DUSAGE_LEGACY_CUBEMAP);
++    WINED3DUSAGE_TO_STR(WINED3DUSAGE_OWNDC);
+ #undef WINED3DUSAGE_TO_STR
+-    if (usage) FIXME("Unrecognized usage flag(s) %#x\n", usage);
++    if (usage & ~WINED3DUSAGE_QUERY_MASK) FIXME("Unrecognized usage flag(s) %#x\n", usage);
+ 
+     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
+ }
+@@ -3568,7 +3571,7 @@ const char *debug_d3dusagequery(DWORD usagequery)
+     WINED3DUSAGEQUERY_TO_STR(WINED3DUSAGE_QUERY_VERTEXTEXTURE);
+     WINED3DUSAGEQUERY_TO_STR(WINED3DUSAGE_QUERY_WRAPANDMIP);
+ #undef WINED3DUSAGEQUERY_TO_STR
+-    if (usagequery) FIXME("Unrecognized usage query flag(s) %#x\n", usagequery);
++    if (usagequery & WINED3DUSAGE_QUERY_MASK) FIXME("Unrecognized usage query flag(s) %#x\n", usagequery);
+ 
+     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
+ }
