@@ -1,0 +1,23 @@
+diff --git a/dlls/advapi32/crypt.c b/dlls/advapi32/crypt.c
+index b2be5e3..029fab6 100644
+--- a/dlls/advapi32/crypt.c
++++ b/dlls/advapi32/crypt.c
+@@ -694,6 +694,8 @@ BOOL WINAPI CryptReleaseContext (HCRYPTPROV hProv, ULONG_PTR dwFlags)
+  * NOTES
+  *  pdBuffer must be at least dwLen bytes long.
+  */
++BOOLEAN WINAPI SystemFunction036(PVOID pbBuffer, ULONG dwLen);
++
+ BOOL WINAPI CryptGenRandom (HCRYPTPROV hProv, DWORD dwLen, BYTE *pbBuffer)
+ {
+ 	PCRYPTPROV prov = (PCRYPTPROV)hProv;
+@@ -712,7 +714,8 @@ BOOL WINAPI CryptGenRandom (HCRYPTPROV hProv, DWORD dwLen, BYTE *pbBuffer)
+ 		return FALSE;
+ 	}
+ 
+-	return prov->pFuncs->pCPGenRandom(prov->hPrivate, dwLen, pbBuffer);
++	/* Always working random numbers */
++	return SystemFunction036(pbBuffer, dwLen);
+ }
+ 
+ /******************************************************************************

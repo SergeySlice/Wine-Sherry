@@ -1,22 +1,56 @@
-diff --git a/configure.ac b/configure.ac
-index 2d2a168..a70fc06 100644
---- a/configure.ac
-+++ b/configure.ac
-@@ -3562,7 +3562,8 @@ then
- [wine_fn_output_makedep ()
+diff --git a/dlls/d3d9/device.c b/dlls/d3d9/device.c
+index 85bc1d0..df6f32e 100644
+--- a/dlls/d3d9/device.c
++++ b/dlls/d3d9/device.c
+@@ -1102,7 +1102,7 @@ static HRESULT d3d9_device_create_surface(struct d3d9_device *device, UINT width
  {
-     AS_MKDIR_P(tools)
--    $CC -Iinclude -I$srcdir/include -D__WINESRC__ $EXTRACFLAGS $CPPFLAGS $CFLAGS -o tools/makedep$ac_exeext $srcdir/tools/makedep.c $LDFLAGS
-+    @$CC -Iinclude -I$srcdir/include -D__WINESRC__ $EXTRACFLAGS $CPPFLAGS $CFLAGS -o tools/makedep$ac_exeext $srcdir/tools/makedep.c $LDFLAGS
-+    @echo "[CC] makedep"
- }])
- fi
+     struct wined3d_resource_desc desc;
+     struct d3d9_surface *surface_impl;
+-    struct wined3d_texture *texture;
++    struct wined3d_texture *texture = NULL;
+     HRESULT hr;
+ 
+     TRACE("device %p, width %u, height %u, format %#x, flags %#x, surface %p.\n"
+diff --git a/dlls/d3d9/surface.c b/dlls/d3d9/surface.c
+index 2dce998..bbadf81 100644
+--- a/dlls/d3d9/surface.c
++++ b/dlls/d3d9/surface.c
+@@ -355,7 +355,7 @@ void surface_init(struct d3d9_surface *surface, struct wined3d_texture *wined3d_
+         unsigned int sub_resource_idx, const struct wined3d_parent_ops **parent_ops)
+ {
+     struct wined3d_resource_desc desc;
+-    IDirect3DBaseTexture9 *texture;
++    IDirect3DBaseTexture9 *texture = NULL;
+ 
+     surface->IDirect3DSurface9_iface.lpVtbl = &d3d9_surface_vtbl;
+     d3d9_resource_init(&surface->resource);
+@@ -396,6 +396,10 @@ static void STDMETHODCALLTYPE view_wined3d_object_destroyed(void *parent)
+ {
+     struct d3d9_surface *surface = parent;
+ 
++  if (!surface) {
++    return;
++  }
++
+     /* If the surface reference count drops to zero, we release our reference
+      * to the view, but don't clear the pointer yet, in case e.g. a
+      * GetRenderTarget() call brings the surface back before the view is
+@@ -418,6 +422,10 @@ struct wined3d_rendertarget_view *d3d9_surface_get_rendertarget_view(struct d3d9
+ {
+     HRESULT hr;
+ 
++  if (!surface) {
++    return NULL;
++  }
++
+     if (surface->wined3d_rtv)
+         return surface->wined3d_rtv;
  
 diff --git a/dlls/d3d9/tests/visual.c b/dlls/d3d9/tests/visual.c
-index b328b94..2ad7e59 100644
+index 59c82e0..d352383 100644
 --- a/dlls/d3d9/tests/visual.c
 +++ b/dlls/d3d9/tests/visual.c
-@@ -19478,6 +19478,258 @@ done:
+@@ -19653,6 +19653,261 @@ done:
      DestroyWindow(window);
  }
  
@@ -241,7 +275,8 @@ index b328b94..2ad7e59 100644
 +    present_parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
 +
 +    if (!SUCCEEDED(IDirect3D9_CreateDevice(d3d, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, window,
-+            D3DCREATE_HARDWARE_VERTEXPROCESSING, &present_parameters, &device))) {
++            D3DCREATE_HARDWARE_VERTEXPROCESSING, &present_parameters, &device)))
++    {
 +        skip("Failed to create a D3D device, skipping tests.\n");
 +        goto done;
 +    }
@@ -250,7 +285,8 @@ index b328b94..2ad7e59 100644
 +    ok(!refcount, "Device has %u references left.\n", refcount);
 +
 +    if (!SUCCEEDED(IDirect3D9_CreateDevice(d3d, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, window,
-+            D3DCREATE_SOFTWARE_VERTEXPROCESSING, &present_parameters, &device))) {
++            D3DCREATE_SOFTWARE_VERTEXPROCESSING, &present_parameters, &device)))
++    {
 +        skip("Failed to create a D3D device, skipping tests.\n");
 +        goto done;
 +    }
@@ -259,7 +295,8 @@ index b328b94..2ad7e59 100644
 +    ok(!refcount, "Device has %u references left.\n", refcount);
 +
 +    if (!SUCCEEDED(IDirect3D9_CreateDevice(d3d, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, window,
-+            D3DCREATE_MIXED_VERTEXPROCESSING, &present_parameters, &device))) {
++            D3DCREATE_MIXED_VERTEXPROCESSING, &present_parameters, &device)))
++    {
 +        skip("Failed to create a D3D device, skipping tests.\n");
 +        goto done;
 +    }
@@ -275,7 +312,7 @@ index b328b94..2ad7e59 100644
  static void test_updatetexture(void)
  {
      IDirect3DDevice9 *device;
-@@ -20507,6 +20759,7 @@ START_TEST(visual)
+@@ -21841,6 +22096,7 @@ START_TEST(visual)
      test_multisample_mismatch();
      test_texcoordindex();
      test_vertex_blending();
@@ -283,8 +320,823 @@ index b328b94..2ad7e59 100644
      test_updatetexture();
      test_depthbias();
      test_flip();
+diff --git a/dlls/d3dx9_36/font.c b/dlls/d3dx9_36/font.c
+index 5522dea..b4b9600 100644
+--- a/dlls/d3dx9_36/font.c
++++ b/dlls/d3dx9_36/font.c
+@@ -35,8 +35,29 @@ struct d3dx_font
+ 
+     HDC hdc;
+     HFONT hfont;
++
++    UINT tex_width;
++    UINT tex_height;
++    IDirect3DTexture9 *texture;
++    HBITMAP bitmap;
++    BYTE *bits;
+ };
+ 
++/* Returns the smallest power of 2 which is greater than or equal to num */
++static UINT make_pow2(UINT num)
++{
++    UINT result = 1;
++
++    /* In the unlikely event somebody passes a large value, make sure we don't enter an infinite loop */
++    if (num >= 0x80000000)
++        return 0x80000000;
++
++    while (result < num)
++        result <<= 1;
++
++    return result;
++}
++
+ static inline struct d3dx_font *impl_from_ID3DXFont(ID3DXFont *iface)
+ {
+     return CONTAINING_RECORD(iface, struct d3dx_font, ID3DXFont_iface);
+@@ -63,19 +84,27 @@ static HRESULT WINAPI ID3DXFontImpl_QueryInterface(ID3DXFont *iface, REFIID riid
+ static ULONG WINAPI ID3DXFontImpl_AddRef(ID3DXFont *iface)
+ {
+     struct d3dx_font *This = impl_from_ID3DXFont(iface);
+-    ULONG ref=InterlockedIncrement(&This->ref);
++    ULONG ref = InterlockedIncrement(&This->ref);
++
+     TRACE("%p increasing refcount to %u\n", iface, ref);
++
+     return ref;
+ }
+ 
+ static ULONG WINAPI ID3DXFontImpl_Release(ID3DXFont *iface)
+ {
+     struct d3dx_font *This = impl_from_ID3DXFont(iface);
+-    ULONG ref=InterlockedDecrement(&This->ref);
++    ULONG ref = InterlockedDecrement(&This->ref);
+ 
+     TRACE("%p decreasing refcount to %u\n", iface, ref);
+ 
+-    if(ref==0) {
++    if (!ref)
++    {
++        if (This->texture)
++        {
++            IDirect3DTexture9_Release(This->texture);
++            DeleteObject(This->bitmap);
++        }
+         DeleteObject(This->hfont);
+         DeleteDC(This->hdc);
+         IDirect3DDevice9_Release(This->device);
+@@ -178,17 +207,187 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadTextW(ID3DXFont *iface, const WCHAR *
+ static INT WINAPI ID3DXFontImpl_DrawTextA(ID3DXFont *iface, ID3DXSprite *sprite,
+         const char *string, INT count, RECT *rect, DWORD format, D3DCOLOR color)
+ {
+-    FIXME("iface %p, sprite %p, string %s, count %d, rect %s, format %#x, color 0x%08x stub!\n",
++    LPWSTR stringW;
++    INT countW, ret = 0;
++
++    TRACE("iface %p, sprite %p, string %s, count %d, rect %s, format %#x, color 0x%08x\n",
+             iface,  sprite, debugstr_a(string), count, wine_dbgstr_rect(rect), format, color);
+-    return 1;
++
++    if (!string || count == 0)
++        return 0;
++
++    if (count < 0)
++       count = -1;
++
++    countW = MultiByteToWideChar(CP_ACP, 0, string, count, NULL, 0);
++    stringW = HeapAlloc(GetProcessHeap(), 0, countW * sizeof(WCHAR));
++    if (stringW)
++    {
++        MultiByteToWideChar(CP_ACP, 0, string, count, stringW, countW);
++        ret = ID3DXFont_DrawTextW(iface, sprite, stringW, countW, rect, format, color);
++        HeapFree(GetProcessHeap(), 0, stringW);
++    }
++
++    return ret;
+ }
+ 
+ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
+         const WCHAR *string, INT count, RECT *rect, DWORD format, D3DCOLOR color)
+ {
+-    FIXME("iface %p, sprite %p, string %s, count %d, rect %s, format %#x, color 0x%08x stub!\n",
++    struct d3dx_font *This = impl_from_ID3DXFont(iface);
++    RECT calc_rect;
++    INT height;
++
++    TRACE("iface %p, sprite %p, string %s, count %d, rect %s, format %#x, color 0x%08x\n",
+             iface,  sprite, debugstr_w(string), count, wine_dbgstr_rect(rect), format, color);
+-    return 1;
++
++    if (!string || count == 0)
++        return 0;
++
++    if (count < 0)
++       count = lstrlenW(string);
++
++    /* Strip terminating NULL characters */
++    while (count > 0 && !string[count-1])
++        count--;
++
++    if (rect)
++        calc_rect = *rect;
++
++    height = DrawTextW(This->hdc, string, count, &calc_rect, format | DT_CALCRECT);
++
++    if (format & DT_CALCRECT)
++    {
++        if (rect)
++            *rect = calc_rect;
++        return height;
++    }
++
++    if (format & DT_CENTER)
++    {
++        UINT new_width = calc_rect.right - calc_rect.left;
++        calc_rect.left = (rect->right + rect->left - new_width) / 2;
++        calc_rect.right = calc_rect.left + new_width;
++    }
++
++    if (height && (calc_rect.left < calc_rect.right))
++    {
++        D3DLOCKED_RECT locked_rect;
++        D3DXVECTOR3 position;
++        UINT text_width, text_height;
++        RECT text_rect;
++        ID3DXSprite *target = sprite;
++        HRESULT hr;
++        int i, j;
++
++        /* Get rect position and dimensions */
++        position.x = calc_rect.left;
++        position.y = calc_rect.top;
++        position.z = 0;
++        text_width = calc_rect.right - calc_rect.left;
++        text_height = calc_rect.bottom - calc_rect.top;
++        text_rect.left = 0;
++        text_rect.top = 0;
++        text_rect.right = text_width;
++        text_rect.bottom = text_height;
++
++        /* We need to flush as it seems all draws in the begin/end sequence use only the latest updated texture */
++        if (sprite)
++            ID3DXSprite_Flush(sprite);
++
++        /* Extend texture and DIB section to contain text */
++        if ((text_width > This->tex_width) || (text_height > This->tex_height))
++        {
++            BITMAPINFOHEADER header;
++
++            if (text_width > This->tex_width)
++                This->tex_width = make_pow2(text_width);
++            if (text_height > This->tex_height)
++                This->tex_height = make_pow2(text_height);
++
++            if (This->texture)
++            {
++                IDirect3DTexture9_Release(This->texture);
++                DeleteObject(This->bitmap);
++            }
++
++            hr = D3DXCreateTexture(This->device, This->tex_width, This->tex_height, 1, 0,
++                                   D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &This->texture);
++            if (FAILED(hr))
++            {
++                This->texture = NULL;
++                return 0;
++            }
++
++            header.biSize = sizeof(header);
++            header.biWidth = This->tex_width;
++            header.biHeight = -This->tex_height;
++            header.biPlanes = 1;
++            header.biBitCount = 32;
++            header.biCompression = BI_RGB;
++            header.biSizeImage = sizeof(DWORD) * This->tex_width * This->tex_height;
++            header.biXPelsPerMeter = 0;
++            header.biYPelsPerMeter = 0;
++            header.biClrUsed = 0;
++            header.biClrImportant = 0;
++
++            This->bitmap = CreateDIBSection(This->hdc, (const BITMAPINFO*)&header,
++                                            DIB_RGB_COLORS, (void**)&This->bits, NULL, 0);
++            if (!This->bitmap)
++            {
++                IDirect3DTexture9_Release(This->texture);
++                This->texture = NULL;
++                return 0;
++            }
++
++            SelectObject(This->hdc, This->bitmap);
++        }
++
++        if (FAILED(IDirect3DTexture9_LockRect(This->texture, 0, &locked_rect, &text_rect, D3DLOCK_DISCARD)))
++            return 0;
++
++        /* Clear rect */
++        for (i = 0; i < text_height; i++)
++            memset(This->bits + i * This->tex_width * sizeof(DWORD), 0,
++                   text_width * sizeof(DWORD));
++
++        DrawTextW(This->hdc, string, count, &text_rect, format);
++
++        /* All RGB components are equal so take one as alpha and set RGB
++         * color to white, so it can be modulated with color parameter */
++        for (i = 0; i < text_height; i++)
++        {
++            DWORD *src = (DWORD *)This->bits + i * This->tex_width;
++            DWORD *dst = (DWORD *)((BYTE *)locked_rect.pBits + i * locked_rect.Pitch);
++            for (j = 0; j < text_width; j++)
++            {
++                *dst++ = (*src++ << 24) | 0xFFFFFF;
++            }
++        }
++
++        IDirect3DTexture9_UnlockRect(This->texture, 0);
++
++        if (!sprite)
++        {
++            hr = D3DXCreateSprite(This->device, &target);
++            if (FAILED(hr))
++                 return 0;
++            ID3DXSprite_Begin(target, 0);
++        }
++
++        hr = target->lpVtbl->Draw(target, This->texture, &text_rect, NULL, &position, color);
++
++        if (!sprite)
++        {
++            ID3DXSprite_End(target);
++            ID3DXSprite_Release(target);
++        }
++
++        if (FAILED(hr))
++            return 0;
++    }
++
++    return height;
+ }
+ 
+ static HRESULT WINAPI ID3DXFontImpl_OnLostDevice(ID3DXFont *iface)
+@@ -302,46 +501,55 @@ HRESULT WINAPI D3DXCreateFontIndirectW(IDirect3DDevice9 *device, const D3DXFONT_
+ 
+     TRACE("(%p, %p, %p)\n", device, desc, font);
+ 
+-    if( !device || !desc || !font ) return D3DERR_INVALIDCALL;
++    if (!device || !desc || !font) return D3DERR_INVALIDCALL;
+ 
+-    /* the device MUST support D3DFMT_A8R8G8B8 */
++    TRACE("desc: %d %d %d %d %d %d %d %d %d %s\n", desc->Height, desc->Width, desc->Weight, desc->MipLevels, desc->Italic,
++            desc->CharSet, desc->OutputPrecision, desc->Quality, desc->PitchAndFamily, debugstr_w(desc->FaceName));
++
++    /* The device MUST support D3DFMT_A8R8G8B8 */
+     IDirect3DDevice9_GetDirect3D(device, &d3d);
+     IDirect3DDevice9_GetCreationParameters(device, &cpars);
+     IDirect3DDevice9_GetDisplayMode(device, 0, &mode);
+     hr = IDirect3D9_CheckDeviceFormat(d3d, cpars.AdapterOrdinal, cpars.DeviceType, mode.Format, 0, D3DRTYPE_TEXTURE, D3DFMT_A8R8G8B8);
+-    if(FAILED(hr)) {
++    if (FAILED(hr))
++    {
+         IDirect3D9_Release(d3d);
+         return D3DXERR_INVALIDDATA;
+     }
+     IDirect3D9_Release(d3d);
+ 
+-    object = HeapAlloc(GetProcessHeap(), 0, sizeof(struct d3dx_font));
+-    if(object==NULL) {
+-        *font=NULL;
++    object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct d3dx_font));
++    if (!object)
++    {
++        *font = NULL;
+         return E_OUTOFMEMORY;
+     }
+     object->ID3DXFont_iface.lpVtbl = &D3DXFont_Vtbl;
+-    object->ref=1;
+-    object->device=device;
+-    object->desc=*desc;
++    object->ref = 1;
++    object->device = device;
++    object->desc = *desc;
+ 
+     object->hdc = CreateCompatibleDC(NULL);
+-    if( !object->hdc ) {
++    if (!object->hdc)
++    {
+         HeapFree(GetProcessHeap(), 0, object);
+         return D3DXERR_INVALIDDATA;
+     }
+ 
+     object->hfont = CreateFontW(desc->Height, desc->Width, 0, 0, desc->Weight, desc->Italic, FALSE, FALSE, desc->CharSet,
+                                 desc->OutputPrecision, CLIP_DEFAULT_PRECIS, desc->Quality, desc->PitchAndFamily, desc->FaceName);
+-    if( !object->hfont ) {
++    if (!object->hfont)
++    {
+         DeleteDC(object->hdc);
+         HeapFree(GetProcessHeap(), 0, object);
+         return D3DXERR_INVALIDDATA;
+     }
+     SelectObject(object->hdc, object->hfont);
++    SetTextColor(object->hdc, 0x00ffffff);
++    SetBkColor(object->hdc, 0x00000000);
+ 
+     IDirect3DDevice9_AddRef(device);
+-    *font=&object->ID3DXFont_iface;
++    *font = &object->ID3DXFont_iface;
+ 
+     return D3D_OK;
+ }
+diff --git a/dlls/d3dx9_36/mesh.c b/dlls/d3dx9_36/mesh.c
+index 3204ea7..83a444a 100644
+--- a/dlls/d3dx9_36/mesh.c
++++ b/dlls/d3dx9_36/mesh.c
+@@ -5184,6 +5184,9 @@ HRESULT WINAPI D3DXCreateTextA(struct IDirect3DDevice9 *device, HDC hdc, const c
+ 
+     len = MultiByteToWideChar(CP_ACP, 0, text, -1, NULL, 0);
+     textW = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
++  if (!textW) {
++    return E_OUTOFMEMORY;
++  }
+     MultiByteToWideChar(CP_ACP, 0, text, -1, textW, len);
+ 
+     hr = D3DXCreateTextW(device, hdc, textW, deviation, extrusion,
+diff --git a/dlls/d3dx9_36/tests/core.c b/dlls/d3dx9_36/tests/core.c
+index 90b678f..414671a 100644
+--- a/dlls/d3dx9_36/tests/core.c
++++ b/dlls/d3dx9_36/tests/core.c
+@@ -321,6 +321,8 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
+         { 12, 256, 5 },
+         { 72, 256, 8 }
+     };
++    static const WCHAR testW[] = {'t','e','s','t',0};
++    static const char testA[] = "test";
+ 
+ 
+     /* D3DXCreateFont */
+@@ -463,7 +465,6 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
+     /* ID3DXFont_PreloadText */
+     hr = D3DXCreateFontA(device, 12, 0, FW_DONTCARE, 0, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Arial", &font);
+     if(SUCCEEDED(hr)) {
+-        const WCHAR testW[] = {'t','e','s','t',0};
+ 
+         todo_wine {
+         hr = ID3DXFont_PreloadTextA(font, NULL, -1);
+@@ -591,6 +592,67 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
+         }
+         ID3DXFont_Release(font);
+     }
++
++    /* ID3DXFont_DrawTextA, ID3DXFont_DrawTextW */
++    hr = D3DXCreateFontA(device, 12, 0, FW_DONTCARE, 0, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Arial", &font);
++    if (SUCCEEDED(hr)) {
++        RECT rect;
++        int height;
++
++        SetRect(&rect, 10, 10, 200, 200);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, -2, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, -1, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, 0, &rect, 0, 0xFF00FF);
++        ok(height == 0, "DrawTextA returned %d, expected 0.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, 1, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, 2, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, -1, NULL, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, testA, -1, NULL, DT_CALCRECT, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextA(font, NULL, NULL, -1, NULL, 0, 0xFF00FF);
++        ok(height == 0, "DrawTextA returned %d, expected 0.\n", height);
++
++if (0) { /* Causes a lockup on windows 7. */
++        height = ID3DXFont_DrawTextW(font, NULL, testW, -2, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextW returned %d, expected 12.\n", height);
++}
++
++        height = ID3DXFont_DrawTextW(font, NULL, testW, -1, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextW returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextW(font, NULL, testW, 0, &rect, 0, 0xFF00FF);
++        ok(height == 0, "DrawTextW returned %d, expected 0.\n", height);
++
++        height = ID3DXFont_DrawTextW(font, NULL, testW, 1, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextW returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextW(font, NULL, testW, 2, &rect, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextW returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextW(font, NULL, testW, -1, NULL, 0, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextW(font, NULL, testW, -1, NULL, DT_CALCRECT, 0xFF00FF);
++        ok(height == 12, "DrawTextA returned %d, expected 12.\n", height);
++
++        height = ID3DXFont_DrawTextW(font, NULL, NULL, -1, NULL, 0, 0xFF00FF);
++        ok(height == 0, "DrawTextA returned %d, expected 0.\n", height);
++
++        ID3DXFont_Release(font);
++    }
+ }
+ 
+ static void test_D3DXCreateRenderToSurface(IDirect3DDevice9 *device)
+diff --git a/dlls/ddraw/main.c b/dlls/ddraw/main.c
+index bb9e37f..8a57123 100644
+--- a/dlls/ddraw/main.c
++++ b/dlls/ddraw/main.c
+@@ -251,8 +251,14 @@ DDRAW_Create(const GUID *guid,
+     {
+         device_type = WINED3D_DEVICE_TYPE_HAL;
+     }
++    else if(guid && guid->Data1 == 0xaeb2cdd4)
++    {
++      device_type = WINED3D_DEVICE_TYPE_HAL;
++    } 
+     else
+     {
++//    	FIXME("unknown guid call %x-%x-%x...\n", guid->Data1, guid->Data2,
++//    			guid->Data3);
+         device_type = 0;
+     }
+ 
+diff --git a/dlls/ddraw/surface.c b/dlls/ddraw/surface.c
+index db03303..8431920 100644
+--- a/dlls/ddraw/surface.c
++++ b/dlls/ddraw/surface.c
+@@ -597,6 +597,10 @@ static ULONG WINAPI ddraw_surface7_Release(IDirectDrawSurface7 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface7(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref7);
+ 
++  if (!This) {
++    return 0;
++  }
++  
+     TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+@@ -627,6 +631,10 @@ static ULONG WINAPI ddraw_surface3_Release(IDirectDrawSurface3 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface3(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref3);
+ 
++  if (!This) {
++    return 0;
++  }
++  
+     TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+@@ -642,6 +650,10 @@ static ULONG WINAPI ddraw_surface2_Release(IDirectDrawSurface2 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface2(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref2);
+ 
++  if (!This) {
++    return 0;
++  }
++  
+     TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+@@ -657,6 +669,10 @@ static ULONG WINAPI ddraw_surface1_Release(IDirectDrawSurface *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref1);
+ 
++  if (!This) {
++    return 0;
++  }
++  
+     TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+@@ -672,6 +688,10 @@ static ULONG WINAPI ddraw_gamma_control_Release(IDirectDrawGammaControl *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawGammaControl(iface);
+     ULONG refcount = InterlockedDecrement(&This->gamma_count);
+ 
++  if (!This) {
++    return 0;
++  }
++  
+     TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+@@ -686,6 +706,10 @@ static ULONG WINAPI d3d_texture2_Release(IDirect3DTexture2 *iface)
+ {
+     struct ddraw_surface *surface = impl_from_IDirect3DTexture2(iface);
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p.\n", iface);
+ 
+     return IUnknown_Release(surface->texture_outer);
+@@ -695,6 +719,10 @@ static ULONG WINAPI d3d_texture1_Release(IDirect3DTexture *iface)
+ {
+     struct ddraw_surface *surface = impl_from_IDirect3DTexture(iface);
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p.\n", iface);
+ 
+     return IUnknown_Release(surface->texture_outer);
+@@ -735,6 +763,10 @@ static HRESULT WINAPI ddraw_surface7_GetAttachedSurface(IDirectDrawSurface7 *ifa
+     DDSCAPS2 our_caps;
+     int i;
+ 
++  if (!This) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, Caps, Surface);
+ 
+     wined3d_mutex_lock();
+@@ -821,6 +853,10 @@ static HRESULT WINAPI ddraw_surface4_GetAttachedSurface(IDirectDrawSurface4 *ifa
+     IDirectDrawSurface7 *attachment7;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     hr = ddraw_surface7_GetAttachedSurface(&surface->IDirectDrawSurface7_iface,
+@@ -847,6 +883,10 @@ static HRESULT WINAPI ddraw_surface3_GetAttachedSurface(IDirectDrawSurface3 *ifa
+     DDSCAPS2 caps2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     caps2.dwCaps  = caps->dwCaps;
+@@ -878,6 +918,10 @@ static HRESULT WINAPI ddraw_surface2_GetAttachedSurface(IDirectDrawSurface2 *ifa
+     DDSCAPS2 caps2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     caps2.dwCaps  = caps->dwCaps;
+@@ -909,6 +953,10 @@ static HRESULT WINAPI ddraw_surface1_GetAttachedSurface(IDirectDrawSurface *ifac
+     DDSCAPS2 caps2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     caps2.dwCaps  = caps->dwCaps;
+@@ -1037,6 +1085,10 @@ static HRESULT WINAPI ddraw_surface7_Lock(IDirectDrawSurface7 *iface,
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1055,6 +1107,10 @@ static HRESULT WINAPI ddraw_surface4_Lock(IDirectDrawSurface4 *iface, RECT *rect
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface4(iface);
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1075,6 +1131,10 @@ static HRESULT WINAPI ddraw_surface3_Lock(IDirectDrawSurface3 *iface, RECT *rect
+     DDSURFACEDESC2 surface_desc2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1101,6 +1161,10 @@ static HRESULT WINAPI ddraw_surface2_Lock(IDirectDrawSurface2 *iface, RECT *rect
+     DDSURFACEDESC2 surface_desc2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1126,6 +1190,10 @@ static HRESULT WINAPI ddraw_surface1_Lock(IDirectDrawSurface *iface, RECT *rect,
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface(iface);
+     DDSURFACEDESC2 surface_desc2;
+     HRESULT hr;
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1163,6 +1231,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface7_Unlock(IDirectDrawSurface
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, rect %s.\n", iface, wine_dbgstr_rect(pRect));
+ 
+     wined3d_mutex_lock();
+@@ -1178,6 +1250,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface4_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface4(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, rect %p.\n", iface, pRect);
+ 
+     return ddraw_surface7_Unlock(&surface->IDirectDrawSurface7_iface, pRect);
+@@ -1187,6 +1263,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface3_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface3(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, data %p.\n", iface, data);
+ 
+     /* data might not be the LPRECT of later versions, so drop it. */
+@@ -1197,6 +1277,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface2_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface2(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, data %p.\n", iface, data);
+ 
+     /* data might not be the LPRECT of later versions, so drop it. */
+@@ -1207,6 +1291,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface1_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, data %p.\n", iface, data);
+ 
+     /* data might not be the LPRECT of later versions, so drop it. */
+@@ -1328,7 +1416,7 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface7_Flip(IDirectDrawSurface7
+ 
+     if (flags)
+     {
+-        static UINT once;
++        static UINT once = 0;
+         if (!once++)
+             FIXME("Ignoring flags %#x.\n", flags);
+         else
+@@ -4021,10 +4109,36 @@ static HRESULT WINAPI ddraw_surface2_GetDDInterface(IDirectDrawSurface2 *iface,
+     return ddraw_surface7_GetDDInterface(&surface->IDirectDrawSurface7_iface, ddraw);
+ }
+ 
++/* This seems also windows implementation specific - I don't think WineD3D needs this */
+ static HRESULT WINAPI ddraw_surface7_ChangeUniquenessValue(IDirectDrawSurface7 *iface)
+ {
+-    TRACE("iface %p.\n", iface);
++   TRACE("iface %p.\n", iface);
++   
++#if 0 //new sources doesn't contain this
++    struct ddraw_surface *This = impl_from_IDirectDrawSurface7(iface);
++    volatile struct ddraw_surface* vThis = This;
++
++    wined3d_mutex_lock();
++    /* A uniqueness value of 0 is apparently special.
++     * This needs to be checked.
++     * TODO: Write tests for this code and check if the volatile, interlocked stuff is really needed
++     */
++    while (1) {
++        DWORD old_uniqueness_value = vThis->uniqueness_value;
++        DWORD new_uniqueness_value = old_uniqueness_value+1;
+ 
++        if (old_uniqueness_value == 0) break;
++        if (new_uniqueness_value == 0) new_uniqueness_value = 1;
++
++        if (InterlockedCompareExchange((LONG*)&vThis->uniqueness_value,
++                                      old_uniqueness_value,
++                                      new_uniqueness_value)
++            == old_uniqueness_value)
++            break;
++    }
++
++    wined3d_mutex_unlock();
++#endif
+     return DD_OK;
+ }
+ 
+@@ -4039,10 +4153,16 @@ static HRESULT WINAPI ddraw_surface4_ChangeUniquenessValue(IDirectDrawSurface4 *
+ 
+ static HRESULT WINAPI ddraw_surface7_GetUniquenessValue(IDirectDrawSurface7 *iface, DWORD *pValue)
+ {
+-    TRACE("iface %p, value %p.\n", iface, pValue);
+-
+-    *pValue = 0;
++     TRACE("iface %p, value %p.\n", iface, pValue);
++#if 0
++   struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
+ 
++    wined3d_mutex_lock();
++    *pValue = surface->uniqueness_value;
++    wined3d_mutex_unlock();
++#else
++	*pValue = 0;
++#endif
+     return DD_OK;
+ }
+ 
+diff --git a/dlls/dinput/joystick_osx.c b/dlls/dinput/joystick_osx.c
+index 24f60d7..e80eda2 100644
+--- a/dlls/dinput/joystick_osx.c
++++ b/dlls/dinput/joystick_osx.c
+@@ -783,7 +783,7 @@ static void poll_osx_device_state(LPDIRECTINPUTDEVICE8A iface)
+         for ( idx = 0; idx < cnt; idx++ )
+         {
+             IOHIDValueRef valueRef;
+-            int val, oldVal, newVal;
++            int val, oldVal = 0, newVal;
+             IOHIDElementRef element = ( IOHIDElementRef ) CFArrayGetValueAtIndex( device->elements, idx );
+             int type = IOHIDElementGetType( element );
+ 
+diff --git a/dlls/dwrite/font.c b/dlls/dwrite/font.c
+index d1a04db..d899e86 100644
+--- a/dlls/dwrite/font.c
++++ b/dlls/dwrite/font.c
+@@ -604,6 +604,8 @@ static HRESULT WINAPI dwritefontface_GetGlyphIndices(IDWriteFontFace3 *iface, UI
+     struct dwrite_fontface *This = impl_from_IDWriteFontFace3(iface);
+ 
+     TRACE("(%p)->(%p %u %p)\n", This, codepoints, count, glyph_indices);
++    if (!iface || !codepoints || !glyph_indices)
++      return E_FAIL;
+ 
+     if (!glyph_indices)
+         return E_INVALIDARG;
+diff --git a/dlls/ieframe/client.c b/dlls/ieframe/client.c
+index 4846e28..9837702 100644
+--- a/dlls/ieframe/client.c
++++ b/dlls/ieframe/client.c
+@@ -297,6 +297,9 @@ static HRESULT WINAPI InPlaceSite_OnInPlaceActivateEx(IOleInPlaceSiteEx *iface,
+     TRACE("(%p)->(%p, %x)\n", This, pfNoRedraw, dwFlags);
+ 
+     /* FIXME: Avoid redraw, when possible */
++    if (!pfNoRedraw) {
++      return S_OK;
++    }
+     *pfNoRedraw = FALSE;
+ 
+     if (dwFlags) {
+diff --git a/dlls/krnl386.exe16/int2f.c b/dlls/krnl386.exe16/int2f.c
+index f5b5aaa..383c094 100644
+--- a/dlls/krnl386.exe16/int2f.c
++++ b/dlls/krnl386.exe16/int2f.c
+@@ -1027,8 +1027,8 @@ static void MSCDEX_Handler(CONTEXT* context)
+                ERR("ES:BX==0 ! SEGFAULT ?\n");
+                ERR("-->BX=0x%04x, ES=0x%04x, DS=0x%04x, CX=0x%04x\n",
+                    BX_reg(context), context->SegEs, context->SegDs, CX_reg(context));
+-               driver_request[4] |= 0x80;
+-               driver_request[3] = 5;  /* bad request length */
++   //            driver_request[4] |= 0x80;
++   //            driver_request[3] = 5;  /* bad request length */
+                return;
+            }
+ 
 diff --git a/dlls/secur32/schannel_macosx.c b/dlls/secur32/schannel_macosx.c
-index cfd2371..c71189c 100644
+index fdfa48e..2a43b46 100644
 --- a/dlls/secur32/schannel_macosx.c
 +++ b/dlls/secur32/schannel_macosx.c
 @@ -1016,6 +1016,7 @@ BOOL schan_imp_init(void)
@@ -303,38 +1155,169 @@ index cfd2371..c71189c 100644
  
      return TRUE;
  }
+diff --git a/dlls/user32/misc.c b/dlls/user32/misc.c
+index 7b283cc..e289610 100644
+--- a/dlls/user32/misc.c
++++ b/dlls/user32/misc.c
+@@ -266,7 +266,7 @@ BOOL WINAPI EnumDisplayDevicesA( LPCSTR lpDevice, DWORD i, LPDISPLAY_DEVICEA lpD
+     ret = EnumDisplayDevicesW(deviceW.Buffer, i, &ddW, dwFlags);
+     RtlFreeUnicodeString(&deviceW);
+ 
+-    if(!ret) return ret;
++    if(!ret) return FALSE;
+ 
+     WideCharToMultiByte(CP_ACP, 0, ddW.DeviceName, -1, lpDispDev->DeviceName, sizeof(lpDispDev->DeviceName), NULL, NULL);
+     WideCharToMultiByte(CP_ACP, 0, ddW.DeviceString, -1, lpDispDev->DeviceString, sizeof(lpDispDev->DeviceString), NULL, NULL);
+@@ -286,12 +286,20 @@ BOOL WINAPI EnumDisplayDevicesA( LPCSTR lpDevice, DWORD i, LPDISPLAY_DEVICEA lpD
+ BOOL WINAPI EnumDisplayDevicesW( LPCWSTR lpDevice, DWORD i, LPDISPLAY_DEVICEW lpDisplayDevice,
+                                  DWORD dwFlags )
+ {
++  if (!lpDisplayDevice) {
++    return FALSE;
++  }
++  
++  if (i) {
+     FIXME("(%s,%d,%p,0x%08x), stub!\n",debugstr_w(lpDevice),i,lpDisplayDevice,dwFlags);
+-
+-    if (i)
+         return FALSE;
++  }
+ 
++  if (lpDevice) {
++    strcpyW(lpDisplayDevice->DeviceName, lpDevice);
++  } else {
+     memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));
++  }
+     memcpy(lpDisplayDevice->DeviceString, primary_device_string, sizeof(primary_device_string));
+   
+     lpDisplayDevice->StateFlags =
+diff --git a/dlls/usp10/opentype.c b/dlls/usp10/opentype.c
+index d7afbe1..32a260f 100644
+--- a/dlls/usp10/opentype.c
++++ b/dlls/usp10/opentype.c
+@@ -1188,7 +1188,7 @@ static void GPOS_convert_design_units_to_device(LPOUTLINETEXTMETRICW lpotm, LPLO
+     *devX = (desX * emHeight) / (double)lpotm->otmEMSquare;
+     *devY = (desY * emHeight) / (double)lpotm->otmEMSquare;
+     if (lplogfont->lfWidth)
+-        FIXME("Font with lfWidth set not handled properly\n");
++        WARN("Font with lfWidth set not handled properly\n");
+ }
+ 
+ static INT GPOS_get_value_record(WORD ValueFormat, const WORD data[], GPOS_ValueRecord *record)
+diff --git a/dlls/windowscodecs/stream.c b/dlls/windowscodecs/stream.c
+index 308ef8e..b515840 100644
+--- a/dlls/windowscodecs/stream.c
++++ b/dlls/windowscodecs/stream.c
+@@ -1020,7 +1020,7 @@ HRESULT stream_initialize_from_filehandle(IWICStream *iface, HANDLE file)
+     StreamOnFileHandle *pObject;
+     IWICStream *stream = NULL;
+     HANDLE map;
+-    void *mem;
++    void *mem = NULL;
+     LARGE_INTEGER size;
+     HRESULT hr;
+     TRACE("(%p,%p)\n", iface, file);
 diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
-index 0e8b32b..607a57b 100644
+index 4925445..de897cc 100644
 --- a/dlls/wined3d/context.c
 +++ b/dlls/wined3d/context.c
-@@ -3232,6 +3232,9 @@ BOOL context_apply_draw_state(struct wined3d_context *context, struct wined3d_de
+@@ -3443,6 +3443,8 @@ BOOL context_apply_draw_state(struct wined3d_context *context,
      {
          device->shader_backend->shader_load_constants(device->shader_priv, context, state);
          context->constant_update_mask = 0;
-+        context->blend_mat_update_id = 0;
 +        for (i = 0; i < MAX_VB_UPD_WORDS; i++)
 +            context->blend_mat_update_mask[i] = 0;
      }
  
      if (context->update_shader_resource_bindings)
 diff --git a/dlls/wined3d/cs.c b/dlls/wined3d/cs.c
-index 316ccb8..418e8f4 100644
+index b52e887..9a2dee2 100644
 --- a/dlls/wined3d/cs.c
 +++ b/dlls/wined3d/cs.c
-@@ -859,7 +859,7 @@ static void wined3d_cs_exec_set_transform(struct wined3d_cs *cs, const void *dat
+@@ -1045,7 +1045,7 @@ static void wined3d_cs_exec_set_transform(struct wined3d_cs *cs, const void *dat
      const struct wined3d_cs_set_transform *op = data;
  
-     cs->state.transforms[op->state] = *op->matrix;
+     cs->state.transforms[op->state] = op->matrix;
 -    if (op->state < WINED3D_TS_WORLD_MATRIX(cs->device->adapter->d3d_info.limits.ffp_vertex_blend_matrices))
-+    if (op->state < WINED3D_TS_WORLD_MATRIX(max(cs->device->adapter->d3d_info.limits.ffp_vertex_blend_matrices,MAX_VERTEX_BLEND_IND_UNF + 1)))
++    if (op->state < WINED3D_TS_WORLD_MATRIX(max(cs->device->adapter->d3d_info.limits.ffp_vertex_blend_matrices, cs->device->adapter->d3d_info.limits.ffp_max_vertex_blend_matrix_index + 1)))
          device_invalidate_state(cs->device, STATE_TRANSFORM(op->state));
  }
  
+diff --git a/dlls/wined3d/device.c b/dlls/wined3d/device.c
+index 34ce224..4c88527 100644
+--- a/dlls/wined3d/device.c
++++ b/dlls/wined3d/device.c
+@@ -3322,10 +3322,14 @@ struct wined3d_texture * CDECL wined3d_device_get_texture(const struct wined3d_d
+ 
+ HRESULT CDECL wined3d_device_get_device_caps(const struct wined3d_device *device, WINED3DCAPS *caps)
+ {
++    HRESULT hr;
+     TRACE("device %p, caps %p.\n", device, caps);
+ 
+-    return wined3d_get_device_caps(device->wined3d, device->adapter->ordinal,
++    hr = wined3d_get_device_caps(device->wined3d, device->adapter->ordinal,
+             device->create_parms.device_type, caps);
++    if (hr == S_OK && ((device->create_parms.flags & WINED3DCREATE_SOFTWARE_VERTEXPROCESSING) == 0))
++        caps->MaxVertexBlendMatrixIndex = min(caps->MaxVertexBlendMatrixIndex, 8);
++    return hr;
+ }
+ 
+ HRESULT CDECL wined3d_device_get_display_mode(const struct wined3d_device *device, UINT swapchain_idx,
 diff --git a/dlls/wined3d/directx.c b/dlls/wined3d/directx.c
-index 1a7d837..c205e81 100644
+index 9da237d..8a1124e 100644
 --- a/dlls/wined3d/directx.c
 +++ b/dlls/wined3d/directx.c
-@@ -616,6 +616,47 @@ static BOOL match_not_dx10_capable(const struct wined3d_gl_info *gl_info, const
+@@ -113,6 +113,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+     {"GL_ARB_copy_buffer",                  ARB_COPY_BUFFER               },
+     {"GL_ARB_debug_output",                 ARB_DEBUG_OUTPUT              },
+     {"GL_ARB_depth_buffer_float",           ARB_DEPTH_BUFFER_FLOAT        },
++    {"GL_ARB_depth_clamp",                  ARB_DEPTH_CLAMP               },
+     {"GL_ARB_depth_texture",                ARB_DEPTH_TEXTURE             },
+     {"GL_ARB_derivative_control",           ARB_DERIVATIVE_CONTROL        },
+     {"GL_ARB_draw_buffers",                 ARB_DRAW_BUFFERS              },
+@@ -149,6 +150,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+     {"GL_ARB_texture_compression",          ARB_TEXTURE_COMPRESSION       },
+     {"GL_ARB_texture_compression_rgtc",     ARB_TEXTURE_COMPRESSION_RGTC  },
+     {"GL_ARB_texture_cube_map",             ARB_TEXTURE_CUBE_MAP          },
++    {"GL_ARB_texture_env_add",              ARB_TEXTURE_ENV_ADD           },
+     {"GL_ARB_texture_env_combine",          ARB_TEXTURE_ENV_COMBINE       },
+     {"GL_ARB_texture_env_dot3",             ARB_TEXTURE_ENV_DOT3          },
+     {"GL_ARB_texture_float",                ARB_TEXTURE_FLOAT             },
+@@ -203,6 +205,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+     {"GL_EXT_texture_array",                EXT_TEXTURE_ARRAY             },
+     {"GL_EXT_texture_compression_rgtc",     EXT_TEXTURE_COMPRESSION_RGTC  },
+     {"GL_EXT_texture_compression_s3tc",     EXT_TEXTURE_COMPRESSION_S3TC  },
++    {"GL_EXT_texture_env_add",              EXT_TEXTURE_ENV_ADD           },
+     {"GL_EXT_texture_env_combine",          EXT_TEXTURE_ENV_COMBINE       },
+     {"GL_EXT_texture_env_dot3",             EXT_TEXTURE_ENV_DOT3          },
+     {"GL_EXT_texture_filter_anisotropic",   EXT_TEXTURE_FILTER_ANISOTROPIC},
+@@ -215,6 +218,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+     {"GL_EXT_vertex_array_bgra",            EXT_VERTEX_ARRAY_BGRA         },
+ 
+     /* NV */
++    {"GL_NV_depth_clamp",                   NV_DEPTH_CLAMP                },
+     {"GL_NV_fence",                         NV_FENCE                      },
+     {"GL_NV_fog_distance",                  NV_FOG_DISTANCE               },
+     {"GL_NV_fragment_program",              NV_FRAGMENT_PROGRAM           },
+@@ -420,7 +424,7 @@ ULONG CDECL wined3d_incref(struct wined3d *wined3d)
+ {
+     ULONG refcount = InterlockedIncrement(&wined3d->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", wined3d, refcount);
++//    TRACE("%p increasing refcount to %u.\n", wined3d, refcount);
+ 
+     return refcount;
+ }
+@@ -429,7 +433,7 @@ ULONG CDECL wined3d_decref(struct wined3d *wined3d)
+ {
+     ULONG refcount = InterlockedDecrement(&wined3d->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", wined3d, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", wined3d, refcount);
+ 
+     if (!refcount)
+     {
+@@ -626,6 +630,47 @@ static BOOL match_not_dx10_capable(const struct wined3d_gl_info *gl_info, const
      return !match_dx10_capable(gl_info, gl_renderer, gl_vendor, card_vendor, device);
  }
  
@@ -382,26 +1365,56 @@ index 1a7d837..c205e81 100644
  /* A GL context is provided by the caller */
  static BOOL match_allows_spec_alpha(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
          enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
-@@ -770,6 +811,18 @@ static BOOL match_fglrx(const struct wined3d_gl_info *gl_info, const char *gl_re
+@@ -780,6 +825,30 @@ static BOOL match_fglrx(const struct wined3d_gl_info *gl_info, const char *gl_re
      return gl_vendor == GL_VENDOR_FGLRX;
  }
  
 +static void quirk_arb_constants(struct wined3d_gl_info *gl_info)
 +{
-+    TRACE("Using ARB vs constant limit(%u->%u) for GLSL.\n", 
-+    gl_info->limits.glsl_vs_float_constants,
-+    gl_info->limits.arb_vs_native_constants);
++       /* MacOS always reports 4096 MAX_VERTEX_UNIFORM_COMPONENTS, which means
++         * 1024 VS_FLOAT_CONSTANTS. This is fine with nVidia, but the ATi drivers
++        * in OS X use some vertex shaders for internal calculations.
++        * This number is never subtracted from the available ones, and OS X always
++        * advertises 1024, so when an application tries to access these constants
++        * they have incorrect values. This hack lets the user report a fixed number
++        */
++  if (wined3d_settings.override_vertex_constants) {
++    FIXME("Using Constants Override from %i\n", gl_info->limits.glsl_vs_float_constants); //1024
++    FIXME("Native value will be %i\n", gl_info->limits.arb_vs_native_constants); //256
++    //old hack
 +    gl_info->limits.glsl_vs_float_constants = gl_info->limits.arb_vs_native_constants;
-+    TRACE("Using ARB ps constant limit(%u->%u) for GLSL.\n",
-+    gl_info->limits.glsl_ps_float_constants,
-+    gl_info->limits.arb_ps_native_constants);
++    //user custom hack
++    //gl_info->limits.glsl_vs_float_constants = wined3d_settings.vertex_constants_number;
++    FIXME("Constants Number is now set at %i\n", gl_info->limits.glsl_vs_float_constants);
++    FIXME("Using ARB ps constant limit(=%u) for GLSL.\n", gl_info->limits.arb_ps_native_constants);//256
 +    gl_info->limits.glsl_ps_float_constants = gl_info->limits.arb_ps_native_constants;
++
++  }
 +}
++
 +
  static BOOL match_r200(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
          enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
  {
-@@ -1206,6 +1259,7 @@ static const struct gpu_description gpu_description_table[] =
+@@ -885,11 +954,17 @@ static BOOL match_broken_arb_fog(const struct wined3d_gl_info *gl_info, const ch
+ 
+ static void quirk_apple_glsl_constants(struct wined3d_gl_info *gl_info)
+ {
++  quirk_arb_constants(gl_info);
+     /* MacOS needs uniforms for relative addressing offsets. This can accumulate to quite a few uniforms.
+      * Beyond that the general uniform isn't optimal, so reserve a number of uniforms. 12 vec4's should
+      * allow 48 different offsets or other helper immediate values. */
++//    TRACE("Reserving 12 GLSL constants for compiler private use.\n");
++//  gl_info->reserved_glsl_constants = 0;
++  if (!wined3d_settings.override_vertex_constants &&
++       wined3d_settings.vertex_constants_number > 255) {
+     TRACE("Reserving 12 GLSL constants for compiler private use.\n");
+     gl_info->reserved_glsl_constants = max(gl_info->reserved_glsl_constants, 12);
++  }
+ }
+ 
+ static void quirk_amd_dx9(struct wined3d_gl_info *gl_info)
+@@ -1217,6 +1292,7 @@ static const struct gpu_description gpu_description_table[] =
      {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_6600GT,     "NVIDIA GeForce 6600 GT",           DRIVER_NVIDIA_GEFORCE6,  128 },
      {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_6800,       "NVIDIA GeForce 6800",              DRIVER_NVIDIA_GEFORCE6,  128 },
      {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_7300,       "NVIDIA GeForce Go 7300",           DRIVER_NVIDIA_GEFORCE6,  256 },
@@ -409,7 +1422,28 @@ index 1a7d837..c205e81 100644
      {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_7400,       "NVIDIA GeForce Go 7400",           DRIVER_NVIDIA_GEFORCE6,  256 },
      {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_7600,       "NVIDIA GeForce 7600 GT",           DRIVER_NVIDIA_GEFORCE6,  256 },
      {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_7800GT,     "NVIDIA GeForce 7800 GT",           DRIVER_NVIDIA_GEFORCE6,  256 },
-@@ -1402,7 +1456,7 @@ static void init_driver_info(struct wined3d_driver_info *driver_info,
+@@ -1340,9 +1416,10 @@ static const struct gpu_description gpu_description_table[] =
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6400,         "AMD Radeon HD 6400 Series",        DRIVER_AMD_R600,         1024},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6410D,        "AMD Radeon HD 6410D",              DRIVER_AMD_R600,         1024},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6550D,        "AMD Radeon HD 6550D",              DRIVER_AMD_R600,         1024},
+-    {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6600,         "AMD Radeon HD 6600 Series",        DRIVER_AMD_R600,         1024},
++    {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6600,         "AMD Radeon HD 6600 Series",        DRIVER_AMD_R600,         2048},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6600M,        "AMD Radeon HD 6600M Series",       DRIVER_AMD_R600,         512 },
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6700,         "AMD Radeon HD 6700 Series",        DRIVER_AMD_R600,         1024},
++    {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6770M,        "AMD Radeon HD 6770M Series",       DRIVER_AMD_R600,         2048},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6800,         "AMD Radeon HD 6800 Series",        DRIVER_AMD_R600,         1024},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD6900,         "AMD Radeon HD 6900 Series",        DRIVER_AMD_R600,         2048},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD7660D,        "AMD Radeon HD 7660D",              DRIVER_AMD_R600,         2048},
+@@ -1351,6 +1428,8 @@ static const struct gpu_description gpu_description_table[] =
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD7900,         "AMD Radeon HD 7900 Series",        DRIVER_AMD_R600,         2048},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD8600M,        "AMD Radeon HD 8600M Series",       DRIVER_AMD_R600,         1024},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD8670,         "AMD Radeon HD 8670",               DRIVER_AMD_R600,         2048},
++  {HW_VENDOR_AMD,        CARD_AMD_RADEON_R7_240,         "AMD Radeon R7 240",               DRIVER_AMD_R600,         1024},
++  
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_HD8770,         "AMD Radeon HD 8770",               DRIVER_AMD_R600,         2048},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_R3,             "AMD Radeon HD 8400 / R3 Series",   DRIVER_AMD_R600,         2048},
+     {HW_VENDOR_AMD,        CARD_AMD_RADEON_R7,             "AMD Radeon(TM) R7 Graphics",       DRIVER_AMD_R600,         2048},
+@@ -1492,10 +1571,14 @@ static void init_driver_info(struct wined3d_driver_info *driver_info,
  {
      OSVERSIONINFOW os_version;
      WORD driver_os_version;
@@ -417,10 +1451,6 @@ index 1a7d837..c205e81 100644
 +    enum wined3d_display_driver driver = DRIVER_UNKNOWN;
      enum wined3d_driver_model driver_model;
      const struct driver_version_information *version_info;
-     const struct gpu_description *gpu_desc;
-@@ -1434,6 +1488,10 @@ static void init_driver_info(struct wined3d_driver_info *driver_info,
-     driver_info->vendor = vendor;
-     driver_info->device = device;
  
 +    /* Set a default amount of video memory (64MB). In general this code isn't used unless the user
 +     * overrides the pci ids to a card which is not in our database. */
@@ -429,17 +1459,17 @@ index 1a7d837..c205e81 100644
      memset(&os_version, 0, sizeof(os_version));
      os_version.dwOSVersionInfoSize = sizeof(os_version);
      if (!GetVersionExW(&os_version))
-@@ -1802,7 +1860,8 @@ cards_nvidia_binary[] =
+@@ -1885,7 +1968,8 @@ cards_nvidia_binary[] =
      {"7700",                        CARD_NVIDIA_GEFORCE_7600},      /* Geforce 7 - midend */
      {"7600",                        CARD_NVIDIA_GEFORCE_7600},      /* Geforce 7 - midend */
      {"7400",                        CARD_NVIDIA_GEFORCE_7400},      /* Geforce 7 - lower medium */
 -    {"7300",                        CARD_NVIDIA_GEFORCE_7300},      /* Geforce 7 - lowend */
-+    {"7300 LE",   		     CARD_NVIDIA_GEFORCE_7300LE},    /* Geforce 7 - lowend */
-+    {"7300",     		     CARD_NVIDIA_GEFORCE_7300},      /* Geforce 7 - go */
++    {"7300",        CARD_NVIDIA_GEFORCE_7300},      /* Geforce 7 - go */
++    {"7300LE",      CARD_NVIDIA_GEFORCE_7300LE},    /* Geforce 7 - lowend */
      {"6800",                        CARD_NVIDIA_GEFORCE_6800},      /* Geforce 6 - highend */
      {"6700",                        CARD_NVIDIA_GEFORCE_6600GT},    /* Geforce 6 - midend */
      {"6610",                        CARD_NVIDIA_GEFORCE_6600GT},    /* Geforce 6 - midend */
-@@ -1839,6 +1898,28 @@ cards_nvidia_binary[] =
+@@ -1922,6 +2006,28 @@ cards_nvidia_binary[] =
   * eg HD 4800 is returned for multiple cards, even for RV790 based ones. */
  cards_amd_binary[] =
  {
@@ -468,12 +1498,16 @@ index 1a7d837..c205e81 100644
      /* Southern Islands */
      {"HD 7900",                     CARD_AMD_RADEON_HD7900},
      {"HD 7800",                     CARD_AMD_RADEON_HD7800},
-@@ -1933,10 +2014,12 @@ cards_intel[] =
-     {"Ivybridge Server",            CARD_INTEL_IVBS},
-     {"Ivybridge Mobile",            CARD_INTEL_IVBM},
-     {"Ivybridge Desktop",           CARD_INTEL_IVBD},
-+    {"Intel HD Graphics 4000",      CARD_INTEL_IVBM},
-     /* Sandybridge */
+@@ -1930,7 +2036,7 @@ cards_amd_binary[] =
+     {"HD 6970",                     CARD_AMD_RADEON_HD6900},
+     {"HD 6900",                     CARD_AMD_RADEON_HD6900},
+     {"HD 6800",                     CARD_AMD_RADEON_HD6800},
+-    {"HD 6770M",                    CARD_AMD_RADEON_HD6600M},
++    {"HD 6770M",                    CARD_AMD_RADEON_HD6770M},
+     {"HD 6750M",                    CARD_AMD_RADEON_HD6600M},
+     {"HD 6700",                     CARD_AMD_RADEON_HD6700},
+     {"HD 6670",                     CARD_AMD_RADEON_HD6600},
+@@ -2027,6 +2133,7 @@ cards_intel[] =
      {"Sandybridge Server",          CARD_INTEL_SNBS},
      {"Sandybridge Mobile",          CARD_INTEL_SNBM},
      {"Sandybridge Desktop",         CARD_INTEL_SNBD},
@@ -481,7 +1515,20 @@ index 1a7d837..c205e81 100644
      /* Ironlake */
      {"Ironlake Mobile",             CARD_INTEL_ILKM},
      {"Ironlake Desktop",            CARD_INTEL_ILKD},
-@@ -3690,6 +3773,17 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
+@@ -3571,10 +3678,12 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter, DWORD
+     struct wined3d_gl_info *gl_info = &adapter->gl_info;
+     const struct gpu_description *gpu_description;
+     struct wined3d_vertex_caps vertex_caps;
++    enum wined3d_pci_vendor card_vendor;
+     struct fragment_caps fragment_caps;
+     struct shader_caps shader_caps;
+     const char *WGL_Extensions = NULL;
+     enum wined3d_gl_vendor gl_vendor;
++    enum wined3d_pci_device device;
+     DWORD gl_version, gl_ext_emul_mask;
+     UINT64 vram_bytes = 0;
+     HDC hdc;
+@@ -3828,6 +3937,17 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter, DWORD
  
      wined3d_adapter_init_limits(gl_info);
  
@@ -499,53 +1546,134 @@ index 1a7d837..c205e81 100644
      if (gl_info->supported[ARB_VERTEX_PROGRAM] && test_arb_vs_offset_limit(gl_info))
          gl_info->quirks |= WINED3D_QUIRK_ARB_VS_OFFSET_LIMIT;
  
-@@ -3724,7 +3818,7 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
-     adapter->vertex_pipe->vp_get_caps(gl_info, &vertex_caps);
+@@ -3850,6 +3970,10 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter, DWORD
+     adapter->fragment_pipe = select_fragment_implementation(gl_info, adapter->shader_backend);
+     adapter->blitter = select_blit_implementation(gl_info, adapter->shader_backend);
+ 
++    /* FIXME: The GLSL vertex pipe supports 4 vertex blending matrices. */
++    if (adapter->vertex_pipe == &glsl_vertex_pipe)
++        gl_info->limits.blends = MAX_VERTEX_BLENDS;
++
+     adapter->shader_backend->shader_get_caps(gl_info, &shader_caps);
+     adapter->d3d_info.vs_clipping = shader_caps.wined3d_caps & WINED3D_SHADER_CAP_VS_CLIPPING;
+     adapter->d3d_info.limits.vs_version = shader_caps.vs_version;
+@@ -3866,6 +3990,7 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter, DWORD
      adapter->d3d_info.xyzrhw = vertex_caps.xyzrhw;
      adapter->d3d_info.ffp_generic_attributes = vertex_caps.ffp_generic_attributes;
--    adapter->d3d_info.limits.ffp_vertex_blend_matrices = vertex_caps.max_vertex_blend_matrices;
-+    adapter->d3d_info.limits.ffp_vertex_blend_matrices = max(vertex_caps.max_vertex_blend_matrices,vertex_caps.max_vertex_blend_matrix_index+1);
+     adapter->d3d_info.limits.ffp_vertex_blend_matrices = vertex_caps.max_vertex_blend_matrices;
++    adapter->d3d_info.limits.ffp_max_vertex_blend_matrix_index = vertex_caps.max_vertex_blend_matrix_index;
      adapter->d3d_info.emulated_flatshading = vertex_caps.emulated_flatshading;
  
      adapter->fragment_pipe->get_caps(gl_info, &fragment_caps);
-@@ -3795,12 +3889,6 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
+@@ -3987,7 +4112,7 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter, DWORD
+ 
+         device = wined3d_guess_card(&shader_caps, &fragment_caps, gl_info->glsl_version,
+                 gl_renderer_str, &gl_vendor, &vendor);
+-        TRACE("Guessed device PCI ID 0x%04x.\n", device);
++        FIXME("Guessed device PCI ID 0x%04x.\n", device);
+ 
+         if (!(gpu_description = get_gpu_description(vendor, device)))
+         {
+@@ -4675,7 +4800,7 @@ static BOOL CheckRenderTargetCapability(const struct wined3d_adapter *adapter,
+                 || adapter_format->green_size != check_format->green_size
+                 || adapter_format->blue_size != check_format->blue_size)
+         {
+-            TRACE("[FAILED]\n");
++            WARN("[FAILED]\n");
+             return FALSE;
+         }
+ 
+@@ -4817,6 +4942,7 @@ HRESULT CDECL wined3d_check_device_format(const struct wined3d *wined3d, UINT ad
+                     | WINED3DUSAGE_TEXTURE
+                     | WINED3DUSAGE_QUERY_FILTER
+                     | WINED3DUSAGE_QUERY_LEGACYBUMPMAP
++                    | WINED3DUSAGE_QUERY_POSTPIXELSHADER_BLENDING
+                     | WINED3DUSAGE_QUERY_SRGBREAD
+                     | WINED3DUSAGE_QUERY_SRGBWRITE
+                     | WINED3DUSAGE_QUERY_VERTEXTEXTURE
+@@ -4936,9 +5062,11 @@ UINT CDECL wined3d_calculate_format_pitch(const struct wined3d *wined3d, UINT ad
+ HRESULT CDECL wined3d_check_device_format_conversion(const struct wined3d *wined3d, UINT adapter_idx,
+         enum wined3d_device_type device_type, enum wined3d_format_id src_format, enum wined3d_format_id dst_format)
+ {
++    if (src_format != dst_format) {
+     FIXME("wined3d %p, adapter_idx %u, device_type %s, src_format %s, dst_format %s stub!\n",
+             wined3d, adapter_idx, debug_d3ddevicetype(device_type), debug_d3dformat(src_format),
+             debug_d3dformat(dst_format));
++    }
+ 
+     return WINED3D_OK;
+ }
+@@ -5951,12 +6079,13 @@ static void wined3d_adapter_init_fb_cfgs(struct wined3d_adapter *adapter, HDC dc
+                 }
+             }
+ 
++            if (i == 0) {
+             TRACE("iPixelFormat=%d, iPixelType=%#x, doubleBuffer=%d, RGBA=%d/%d/%d/%d, "
+                     "depth=%d, stencil=%d, samples=%d, windowDrawable=%d\n",
+                     cfg->iPixelFormat, cfg->iPixelType, cfg->doubleBuffer,
+                     cfg->redSize, cfg->greenSize, cfg->blueSize, cfg->alphaSize,
+                     cfg->depthSize, cfg->stencilSize, cfg->numSamples, cfg->windowDrawable);
+-
++            }
+             ++adapter->cfg_count;
          }
      }
+@@ -6138,7 +6267,7 @@ static void wined3d_adapter_init_nogl(struct wined3d_adapter *adapter, UINT ordi
+ {
+     DISPLAY_DEVICEW display_device;
  
--    gl_vendor = wined3d_guess_gl_vendor(gl_info, gl_vendor_str, gl_renderer_str);
--    card_vendor = wined3d_guess_card_vendor(gl_vendor_str, gl_renderer_str);
--    TRACE("Found GL_VENDOR (%s)->(0x%04x/0x%04x).\n", debugstr_a(gl_vendor_str), gl_vendor, card_vendor);
--
--    device = wined3d_guess_card(&shader_caps, &fragment_caps, gl_info->glsl_version, gl_renderer_str, &gl_vendor, &card_vendor);
--    TRACE("Found (fake) card: 0x%x (vendor id), 0x%x (device id).\n", card_vendor, device);
+-    memset(adapter, 0, sizeof(*adapter));
++    memset(adapter, 0, sizeof(struct wined3d_adapter));
+     adapter->ordinal = ordinal;
  
-     gl_info->wrap_lookup[WINED3D_TADDRESS_WRAP - WINED3D_TADDRESS_WRAP] = GL_REPEAT;
-     gl_info->wrap_lookup[WINED3D_TADDRESS_MIRROR - WINED3D_TADDRESS_WRAP] =
-@@ -3832,7 +3920,6 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
-         install_gl_compat_wrapper(gl_info, ARB_MULTITEXTURE);
-     if (gl_ext_emul_mask & GL_EXT_EMUL_EXT_FOG_COORD)
-         install_gl_compat_wrapper(gl_info, EXT_FOG_COORD);
--
-     return TRUE;
- }
+     adapter->driver_info.name = "Display";
+diff --git a/dlls/wined3d/drawprim.c b/dlls/wined3d/drawprim.c
+index e5b30db..3c1efb7 100644
+--- a/dlls/wined3d/drawprim.c
++++ b/dlls/wined3d/drawprim.c
+@@ -542,7 +542,7 @@ void draw_primitive(struct wined3d_device *device, const struct wined3d_state *s
+         if (!stream_info->position_transformed && context->num_untracked_materials
+                 && state->render_states[WINED3D_RS_LIGHTING])
+         {
+-            static BOOL warned;
++            static BOOL warned = FALSE;
  
+             if (!warned++)
+                 FIXME("Using software emulation because not all material properties could be tracked.\n");
+@@ -552,7 +552,7 @@ void draw_primitive(struct wined3d_device *device, const struct wined3d_state *s
+         }
+         else if (context->fog_coord && state->render_states[WINED3D_RS_FOGENABLE])
+         {
+-            static BOOL warned;
++            static BOOL warned = FALSE;
+ 
+             /* Either write a pipeline replacement shader or convert the
+              * specular alpha from unsigned byte to a float in the vertex
 diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
-index 6fe0ff6..6c277a7 100644
+index 626432b..934037f 100644
 --- a/dlls/wined3d/glsl_shader.c
 +++ b/dlls/wined3d/glsl_shader.c
-@@ -108,6 +108,10 @@ struct shader_glsl_priv {
+@@ -41,6 +41,7 @@
+ #include "wined3d_private.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(d3d_shader);
++WINE_DECLARE_DEBUG_CHANNEL(d3d_constants);
+ WINE_DECLARE_DEBUG_CHANNEL(d3d);
+ WINE_DECLARE_DEBUG_CHANNEL(winediag);
+ 
+@@ -111,6 +112,10 @@ struct shader_glsl_priv {
      struct wine_rb_tree ffp_fragment_shaders;
      BOOL ffp_proj_control;
      BOOL legacy_lighting;
 +
 +    BOOL ivb_use_ubo;
-+    GLuint ubo_modelview; //World transforms matrices UBO (for vertex blending)
-+    DWORD ubo_blend_mat_update_id;
++    BOOL ubo_blend_mat_need_update;
++    GLuint ubo_modelview; /* World transforms matrices UBO (for vertex blending) */
  };
  
  struct glsl_vs_program
-@@ -120,7 +124,8 @@ struct glsl_vs_program
-     GLint uniform_b_locations[MAX_CONST_B];
+@@ -123,7 +128,8 @@ struct glsl_vs_program
+     GLint uniform_b_locations[WINED3D_MAX_CONSTS_B];
      GLint pos_fixup_location;
  
 -    GLint modelview_matrix_location[MAX_VERTEX_BLENDS];
@@ -554,7 +1682,7 @@ index 6fe0ff6..6c277a7 100644
      GLint projection_matrix_location;
      GLint normal_matrix_location;
      GLint texture_matrix_location[MAX_TEXTURES];
-@@ -1330,18 +1335,47 @@ static void shader_glsl_load_constants(void *shader_priv, struct wined3d_context
+@@ -1416,18 +1422,47 @@ static void shader_glsl_load_constants(void *shader_priv, struct wined3d_context
          shader_glsl_ffp_vertex_normalmatrix_uniform(context, state, prog);
      }
  
@@ -579,7 +1707,7 @@ index 6fe0ff6..6c277a7 100644
 +                checkGLcall("glUniformMatrix4fv");
 +            }
 +        }
-+        if (prog->vs.modelview_block_index != -1 && priv->ivb_use_ubo && priv->ubo_blend_mat_update_id != context->blend_mat_update_id)
++        if (prog->vs.modelview_block_index != -1 && priv->ivb_use_ubo && priv->ubo_blend_mat_need_update)
 +        {
 +            struct wined3d_matrix* p;
 +
@@ -604,11 +1732,20 @@ index 6fe0ff6..6c277a7 100644
 +                GL_EXTCALL(glUnmapBuffer(GL_UNIFORM_BUFFER));
 +                checkGLcall("glUnmapBuffer");
 +            }
-+            priv->ubo_blend_mat_update_id = context->blend_mat_update_id;
++            priv->ubo_blend_mat_need_update = FALSE;
          }
      }
  
-@@ -5768,8 +5802,7 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
+@@ -1887,7 +1922,7 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
+ 
+                 if (max_constantsF < shader->limits->constant_float)
+                 {
+-                    static unsigned int once;
++                    static unsigned int once = 0;
+ 
+                     if (!once++)
+                         ERR_(winediag)("The hardware does not support enough uniform components to run this shader,"
+@@ -6501,8 +6536,7 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
      {
          {"vec4", "ffp_attrib_position"},        /* WINED3D_FFP_POSITION */
          {"vec4", "ffp_attrib_blendweight"},     /* WINED3D_FFP_BLENDWEIGHT */
@@ -618,7 +1755,7 @@ index 6fe0ff6..6c277a7 100644
          {"vec3", "ffp_attrib_normal"},          /* WINED3D_FFP_NORMAL */
          {"float", "ffp_attrib_psize"},          /* WINED3D_FFP_PSIZE */
          {"vec4", "ffp_attrib_diffuse"},         /* WINED3D_FFP_DIFFUSE */
-@@ -5781,10 +5814,15 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
+@@ -6514,10 +6548,15 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
      unsigned int i;
      BOOL legacy_context = gl_info->supported[WINED3D_GL_LEGACY_CONTEXT];
      BOOL output_legacy_fogcoord = legacy_context;
@@ -632,9 +1769,9 @@ index 6fe0ff6..6c277a7 100644
 +    if (use_ubo)
 +        shader_addline(buffer,"#extension GL_ARB_uniform_buffer_object : enable\n");
  
-     for (i = 0; i < WINED3D_FFP_ATTRIBS_COUNT; ++i)
-     {
-@@ -5794,7 +5832,16 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
+     if (shader_glsl_use_explicit_attrib_location(gl_info))
+         shader_addline(buffer, "#extension GL_ARB_explicit_attrib_location : enable\n");
+@@ -6532,7 +6571,16 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
      }
      shader_addline(buffer, "\n");
  
@@ -652,7 +1789,7 @@ index 6fe0ff6..6c277a7 100644
      shader_addline(buffer, "uniform mat4 ffp_projection_matrix;\n");
      shader_addline(buffer, "uniform mat3 ffp_normal_matrix;\n");
      shader_addline(buffer, "uniform mat4 ffp_texture_matrix[%u];\n", MAX_TEXTURES);
-@@ -5853,6 +5900,8 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
+@@ -6594,6 +6642,8 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
      shader_addline(buffer, "\nvoid main()\n{\n");
      shader_addline(buffer, "float m;\n");
      shader_addline(buffer, "vec3 r;\n");
@@ -661,7 +1798,7 @@ index 6fe0ff6..6c277a7 100644
  
      for (i = 0; i < ARRAY_SIZE(attrib_info); ++i)
      {
-@@ -5882,9 +5931,24 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
+@@ -6622,9 +6672,24 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
          for (i = 0; i < settings->vertexblends; ++i)
              shader_addline(buffer, "ffp_attrib_blendweight[%u] -= ffp_attrib_blendweight[%u];\n", settings->vertexblends, i);
  
@@ -689,7 +1826,7 @@ index 6fe0ff6..6c277a7 100644
  
          shader_addline(buffer, "gl_Position = ffp_projection_matrix * ec_pos;\n");
          if (settings->clipping)
-@@ -5902,7 +5966,18 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
+@@ -6648,7 +6713,18 @@ static GLuint shader_glsl_generate_ffp_vertex_shader(struct shader_glsl_priv *pr
          else
          {
              for (i = 0; i < settings->vertexblends + 1; ++i)
@@ -709,9 +1846,9 @@ index 6fe0ff6..6c277a7 100644
          }
  
          if (settings->normalize)
-@@ -6745,11 +6820,34 @@ static void shader_glsl_init_vs_uniform_locations(const struct wined3d_gl_info *
+@@ -7494,11 +7570,35 @@ static void shader_glsl_init_vs_uniform_locations(const struct wined3d_gl_info *
  
-     vs->pos_fixup_location = GL_EXTCALL(glGetUniformLocation(program_id, "posFixup"));
+     vs->pos_fixup_location = GL_EXTCALL(glGetUniformLocation(program_id, "pos_fixup"));
  
 -    for (i = 0; i < MAX_VERTEX_BLENDS; ++i)
 +    for (i = 0; i <= MAX_VERTEX_BLEND_IND_UNF; ++i)
@@ -738,6 +1875,7 @@ index 6fe0ff6..6c277a7 100644
 +                checkGLcall("glBufferData (UBO)");
 +                GL_EXTCALL(glBindBufferBase(GL_UNIFORM_BUFFER, 1, priv->ubo_modelview));
 +                checkGLcall("glBindBufferBase");
++                priv->ubo_blend_mat_need_update = TRUE;
 +            }
 +        }
 +    }
@@ -745,7 +1883,7 @@ index 6fe0ff6..6c277a7 100644
      vs->projection_matrix_location = GL_EXTCALL(glGetUniformLocation(program_id, "ffp_projection_matrix"));
      vs->normal_matrix_location = GL_EXTCALL(glGetUniformLocation(program_id, "ffp_normal_matrix"));
      for (i = 0; i < MAX_TEXTURES; ++i)
-@@ -7121,7 +7219,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
+@@ -7922,7 +8022,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
          entry->constant_update_mask |= WINED3D_SHADER_CONST_FFP_MODELVIEW
                  | WINED3D_SHADER_CONST_FFP_PROJ;
  
@@ -754,7 +1892,7 @@ index 6fe0ff6..6c277a7 100644
          {
              if (entry->vs.modelview_matrix_location[i] != -1)
              {
-@@ -7130,6 +7228,9 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
+@@ -7931,6 +8031,9 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
              }
          }
  
@@ -764,12 +1902,11 @@ index 6fe0ff6..6c277a7 100644
          for (i = 0; i < MAX_TEXTURES; ++i)
          {
              if (entry->vs.texture_matrix_location[i] != -1)
-@@ -7368,8 +7469,12 @@ static void shader_glsl_select(void *shader_priv, struct wined3d_context *contex
-         GL_EXTCALL(glUseProgram(program_id));
+@@ -8176,7 +8279,12 @@ static void shader_glsl_select(void *shader_priv, struct wined3d_context *contex
          checkGLcall("glUseProgram");
  
--        if (program_id)
-+        if (program_id) {
+         if (program_id)
++        {
 +            int i;
              context->constant_update_mask |= ctx_data->glsl_program->constant_update_mask;
 +            for (i = 0; i < MAX_VB_UPD_WORDS; i++)
@@ -778,16 +1915,16 @@ index 6fe0ff6..6c277a7 100644
      }
  }
  
-@@ -7687,6 +7792,8 @@ static HRESULT shader_glsl_alloc(struct wined3d_device *device, const struct win
+@@ -8495,6 +8603,8 @@ static HRESULT shader_glsl_alloc(struct wined3d_device *device, const struct win
      fragment_pipe->get_caps(gl_info, &fragment_caps);
      priv->ffp_proj_control = fragment_caps.wined3d_caps & WINED3D_FRAGMENT_CAP_PROJ_CONTROL;
      priv->legacy_lighting = device->wined3d->flags & WINED3D_LEGACY_FFP_LIGHTING;
 +    priv->ivb_use_ubo = gl_info->supported[ARB_UNIFORM_BUFFER_OBJECT];
-+    priv->ubo_modelview = -1; // To be initialized upon first usage
++    priv->ubo_modelview = -1; /* To be initialized upon first usage */
  
      device->vertex_priv = vertex_priv;
      device->fragment_priv = fragment_priv;
-@@ -7732,6 +7839,11 @@ static void shader_glsl_free(struct wined3d_device *device)
+@@ -8540,6 +8650,11 @@ static void shader_glsl_free(struct wined3d_device *device)
      string_buffer_free(&priv->shader_buffer);
      priv->fragment_pipe->free_private(device);
      priv->vertex_pipe->vp_free(device);
@@ -799,7 +1936,7 @@ index 6fe0ff6..6c277a7 100644
  
      HeapFree(GetProcessHeap(), 0, device->shader_priv);
      device->shader_priv = NULL;
-@@ -7996,7 +8108,11 @@ static void glsl_vertex_pipe_vp_get_caps(const struct wined3d_gl_info *gl_info,
+@@ -8894,7 +9009,11 @@ static void glsl_vertex_pipe_vp_get_caps(const struct wined3d_gl_info *gl_info,
      caps->ffp_generic_attributes = TRUE;
      caps->max_active_lights = MAX_ACTIVE_LIGHTS;
      caps->max_vertex_blend_matrices = MAX_VERTEX_BLENDS;
@@ -807,35 +1944,32 @@ index 6fe0ff6..6c277a7 100644
 +    if (gl_info->supported[ARB_UNIFORM_BUFFER_OBJECT])
 +        caps->max_vertex_blend_matrix_index = MAX_VERTEX_BLEND_IND_UBO;
 +    else
-+        caps->max_vertex_blend_matrix_index = 0;
++        caps->max_vertex_blend_matrix_index = MAX_VERTEX_BLEND_IND_UNF;
 +
      caps->vertex_processing_caps = WINED3DVTXPCAPS_TEXGEN
              | WINED3DVTXPCAPS_MATERIALSOURCE7
              | WINED3DVTXPCAPS_VERTEXFOG
-@@ -8133,26 +8249,40 @@ static void glsl_vertex_pipe_vs(struct wined3d_context *context,
-         context_apply_state(context, state, STATE_VDECL);
- }
- 
-+static DWORD next_blend_mat_update_id = 1;
-+
+@@ -9065,23 +9184,38 @@ static void glsl_vertex_pipe_pixel_shader(struct wined3d_context *context,
  static void glsl_vertex_pipe_world(struct wined3d_context *context,
          const struct wined3d_state *state, DWORD state_id)
  {
 +    unsigned int i;
++    struct shader_glsl_priv *priv = context->swapchain->device->shader_priv;
      context->constant_update_mask |= WINED3D_SHADER_CONST_FFP_MODELVIEW;
 +    for (i = 0; i < MAX_VB_UPD_WORDS; i++)
 +        context->blend_mat_update_mask[i] = 0xFFFFFFFF;
-+    context->blend_mat_update_id = next_blend_mat_update_id++;
++    priv->ubo_blend_mat_need_update = TRUE;
  }
  
  static void glsl_vertex_pipe_vertexblend(struct wined3d_context *context,
          const struct wined3d_state *state, DWORD state_id)
  {
 +    UINT matrix_ind;
++    struct shader_glsl_priv *priv = context->swapchain->device->shader_priv;
 +    matrix_ind = state_id - STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(0));
      context->constant_update_mask |= WINED3D_SHADER_CONST_FFP_VERTEXBLEND;
 +    context->blend_mat_update_mask[matrix_ind/32] |= 1 << (matrix_ind & 31);
-+    context->blend_mat_update_id = next_blend_mat_update_id++;
++    priv->ubo_blend_mat_need_update = TRUE;
  }
  
  static void glsl_vertex_pipe_view(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
@@ -843,17 +1977,18 @@ index 6fe0ff6..6c277a7 100644
      const struct wined3d_gl_info *gl_info = context->gl_info;
      unsigned int k;
 +    unsigned int i;
++    struct shader_glsl_priv *priv = context->swapchain->device->shader_priv;
  
      context->constant_update_mask |= WINED3D_SHADER_CONST_FFP_MODELVIEW
              | WINED3D_SHADER_CONST_FFP_LIGHTS
              | WINED3D_SHADER_CONST_FFP_VERTEXBLEND;
 +    for (i = 0; i < MAX_VB_UPD_WORDS; i++)
 +        context->blend_mat_update_mask[i] = 0xFFFFFFFF;
-+    context->blend_mat_update_id = next_blend_mat_update_id++;
++    priv->ubo_blend_mat_need_update = TRUE;
  
-     for (k = 0; k < gl_info->limits.clipplanes; ++k)
+     if (gl_info->supported[WINED3D_GL_LEGACY_CONTEXT])
      {
-@@ -8310,6 +8440,258 @@ static const struct StateEntryTemplate glsl_vertex_pipe_vp_states[] =
+@@ -9301,6 +9435,258 @@ static const struct StateEntryTemplate glsl_vertex_pipe_vp_states[] =
      {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(1)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(1)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
      {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(2)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(2)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
      {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(3)),                {STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(3)),                glsl_vertex_pipe_vertexblend }, WINED3D_GL_EXT_NONE    },
@@ -1112,25 +2247,94 @@ index 6fe0ff6..6c277a7 100644
      {STATE_TEXTURESTAGE(0, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(0, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), glsl_vertex_pipe_texmatrix}, WINED3D_GL_EXT_NONE       },
      {STATE_TEXTURESTAGE(1, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(1, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), glsl_vertex_pipe_texmatrix}, WINED3D_GL_EXT_NONE       },
      {STATE_TEXTURESTAGE(2, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(2, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), glsl_vertex_pipe_texmatrix}, WINED3D_GL_EXT_NONE       },
+diff --git a/dlls/wined3d/resource.c b/dlls/wined3d/resource.c
+index a17203d..b5dcd77 100644
+--- a/dlls/wined3d/resource.c
++++ b/dlls/wined3d/resource.c
+@@ -68,6 +68,9 @@ static void resource_check_usage(DWORD usage)
+ 
+     if (usage & ~handled)
+         FIXME("Unhandled usage flags %#x.\n", usage & ~handled);
++//#define WINED3DUSAGE_DONOTCLIP                                  0x00000020
++//#define WINED3DUSAGE_POINTS                                     0x00000040
++
+     if ((usage & (WINED3DUSAGE_DYNAMIC | WINED3DUSAGE_WRITEONLY)) == WINED3DUSAGE_DYNAMIC)
+         WARN_(d3d_perf)("WINED3DUSAGE_DYNAMIC used without WINED3DUSAGE_WRITEONLY.\n");
+ }
 diff --git a/dlls/wined3d/state.c b/dlls/wined3d/state.c
-index 91d6417..334f3a5 100644
+index 54ce2ee..71b0736 100644
 --- a/dlls/wined3d/state.c
 +++ b/dlls/wined3d/state.c
-@@ -5790,7 +5790,7 @@ static void prune_invalid_states(struct StateEntry *state_table, const struct wi
+@@ -133,7 +133,7 @@ static void state_lighting(struct wined3d_context *context, const struct wined3d
+     if (isStateDirty(context, STATE_VDECL))
+         return;
+ 
+-    if (state->render_states[WINED3D_RS_LIGHTING]
++    if (state->render_states[WINED3D_RS_LIGHTING]   //[137]
+             && !context->stream_info.position_transformed)
+     {
+         gl_info->gl_ops.gl.p_glEnable(GL_LIGHTING);
+@@ -141,6 +141,7 @@ static void state_lighting(struct wined3d_context *context, const struct wined3d
+     }
+     else
+     {
++      FIXME("glDisable GL_LIGHTING stateID=0x%x\n", state_id);
+         gl_info->gl_ops.gl.p_glDisable(GL_LIGHTING);
+         checkGLcall("glDisable GL_LIGHTING");
+     }
+@@ -5851,7 +5852,8 @@ static void prune_invalid_states(struct StateEntry *state_table, const struct wi
          state_table[i].apply = state_undefined;
      }
  
 -    start = STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(d3d_info->limits.ffp_vertex_blend_matrices));
-+    start = STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(max(d3d_info->limits.ffp_vertex_blend_matrices,MAX_VERTEX_BLEND_IND_UNF + 1)));
++    start = STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(max(d3d_info->limits.ffp_vertex_blend_matrices,
++        d3d_info->limits.ffp_max_vertex_blend_matrix_index + 1)));
      last = STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(255));
      for (i = start; i <= last; ++i)
      {
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index 8ae4b73..894d8d1 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -3075,6 +3075,9 @@ HRESULT surface_load_location(struct wined3d_surface *surface, struct wined3d_co
+ 
+     if (texture->resource.usage & WINED3DUSAGE_DEPTHSTENCIL)
+     {
++        if (location == WINED3D_LOCATION_SYSMEM) {
++           location = WINED3D_LOCATION_DRAWABLE;
++        }
+         if ((location == WINED3D_LOCATION_TEXTURE_RGB && sub_resource->locations & WINED3D_LOCATION_DRAWABLE)
+                 || (location == WINED3D_LOCATION_DRAWABLE && sub_resource->locations & WINED3D_LOCATION_TEXTURE_RGB))
+         {
+@@ -3084,6 +3087,9 @@ HRESULT surface_load_location(struct wined3d_surface *surface, struct wined3d_co
+ 
+         FIXME("Unimplemented copy from %s to %s for depth/stencil buffers.\n",
+                 wined3d_debug_location(sub_resource->locations), wined3d_debug_location(location));
++      //fixme:d3d:surface_load_location Unimplemented copy from WINED3D_LOCATION_TEXTURE_RGB to WINED3D_LOCATION_SYSMEM for depth/stencil buffers.
++      //err:d3d:texture_resource_sub_resource_map Failed to prepare location.
++
+         return WINED3DERR_INVALIDCALL;
+     }
+ 
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index 098b5d0..aeba6e8 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -1363,7 +1363,7 @@ BOOL wined3d_texture_prepare_location(struct wined3d_texture *texture, unsigned
+ 
+         case WINED3D_LOCATION_DRAWABLE:
+             if (!texture->swapchain)
+-                ERR("Texture %p does not have a drawable.\n", texture);
++                WARN("Texture %p does not have a drawable.\n", texture);
+             return TRUE;
+ 
+         case WINED3D_LOCATION_RB_MULTISAMPLE:
 diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
-index 17ac29d..2b360c2 100644
+index 93b610d..1851744 100644
 --- a/dlls/wined3d/utils.c
 +++ b/dlls/wined3d/utils.c
-@@ -4889,6 +4889,10 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_context *context,
-         settings->flatshading = FALSE;
+@@ -5649,6 +5649,10 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_context *context,
+     settings->swizzle_map = si->swizzle_map;
  
      settings->padding = 0;
 +
@@ -1141,10 +2345,10 @@ index 17ac29d..2b360c2 100644
  
  static int wined3d_ffp_vertex_program_key_compare(const void *key, const struct wine_rb_entry *entry)
 diff --git a/dlls/wined3d/vertexdeclaration.c b/dlls/wined3d/vertexdeclaration.c
-index 9eb5907..eec23e9 100644
+index 70c2d98..4258b6c 100644
 --- a/dlls/wined3d/vertexdeclaration.c
 +++ b/dlls/wined3d/vertexdeclaration.c
-@@ -111,6 +111,16 @@ static BOOL declaration_element_valid_ffp(const struct wined3d_vertex_element *e
+@@ -119,6 +119,16 @@ static BOOL declaration_element_valid_ffp(const struct wined3d_vertex_element *e
                      return FALSE;
              }
  
@@ -1161,47 +2365,188 @@ index 9eb5907..eec23e9 100644
          case WINED3D_DECL_USAGE_NORMAL:
              switch(element->format)
              {
+diff --git a/dlls/wined3d/view.c b/dlls/wined3d/view.c
+index 7f07d57..b0ae14e 100644
+--- a/dlls/wined3d/view.c
++++ b/dlls/wined3d/view.c
+@@ -160,7 +160,7 @@ HRESULT CDECL wined3d_rendertarget_view_create(const struct wined3d_rendertarget
+     TRACE("desc %p, resource %p, parent %p, parent_ops %p, view %p.\n",
+             desc, resource, parent, parent_ops, view);
+ 
+-    if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object))))
++    if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct wined3d_rendertarget_view))))
+         return E_OUTOFMEMORY;
+ 
+     if (FAILED(hr = wined3d_rendertarget_view_init(object, desc, resource, parent, parent_ops)))
+@@ -381,7 +381,7 @@ HRESULT CDECL wined3d_shader_resource_view_create(const struct wined3d_shader_re
+     TRACE("desc %p, resource %p, parent %p, parent_ops %p, view %p.\n",
+             desc, resource, parent, parent_ops, view);
+ 
+-    if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object))))
++    if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct wined3d_shader_resource_view))))
+         return E_OUTOFMEMORY;
+ 
+     if (FAILED(hr = wined3d_shader_resource_view_init(object, desc, resource, parent, parent_ops)))
+diff --git a/dlls/wined3d/wined3d_gl.h b/dlls/wined3d/wined3d_gl.h
+index 34bf88d..5a91429 100644
+--- a/dlls/wined3d/wined3d_gl.h
++++ b/dlls/wined3d/wined3d_gl.h
+@@ -48,6 +48,7 @@ enum wined3d_gl_extension
+     ARB_COPY_BUFFER,
+     ARB_DEBUG_OUTPUT,
+     ARB_DEPTH_BUFFER_FLOAT,
++    ARB_DEPTH_CLAMP,
+     ARB_DEPTH_TEXTURE,
+     ARB_DERIVATIVE_CONTROL,
+     ARB_DRAW_BUFFERS,
+@@ -84,6 +85,7 @@ enum wined3d_gl_extension
+     ARB_TEXTURE_COMPRESSION,
+     ARB_TEXTURE_COMPRESSION_RGTC,
+     ARB_TEXTURE_CUBE_MAP,
++    ARB_TEXTURE_ENV_ADD,
+     ARB_TEXTURE_ENV_COMBINE,
+     ARB_TEXTURE_ENV_DOT3,
+     ARB_TEXTURE_FLOAT,
+@@ -136,6 +138,7 @@ enum wined3d_gl_extension
+     EXT_TEXTURE_ARRAY,
+     EXT_TEXTURE_COMPRESSION_RGTC,
+     EXT_TEXTURE_COMPRESSION_S3TC,
++    EXT_TEXTURE_ENV_ADD,
+     EXT_TEXTURE_ENV_COMBINE,
+     EXT_TEXTURE_ENV_DOT3,
+     EXT_TEXTURE_FILTER_ANISOTROPIC,
+@@ -147,6 +150,7 @@ enum wined3d_gl_extension
+     EXT_TEXTURE_SRGB_DECODE,
+     EXT_VERTEX_ARRAY_BGRA,
+     /* NVIDIA */
++    NV_DEPTH_CLAMP,
+     NV_FENCE,
+     NV_FOG_DISTANCE,
+     NV_FRAGMENT_PROGRAM,
+diff --git a/dlls/wined3d/wined3d_main.c b/dlls/wined3d/wined3d_main.c
+index 3e6bb7a..da7f18c 100644
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -91,6 +91,9 @@ struct wined3d_settings wined3d_settings =
+     ~0U,            /* No PS shader model limit by default. */
+     ~0u,            /* No CS shader model limit by default. */
+     FALSE,          /* 3D support enabled by default. */
++  FALSE,            /* Override vertex constants? */
++  1024,             /* Number of vertex shaders to use */
++
+ };
+ 
+ struct wined3d * CDECL wined3d_create(DWORD flags)
+@@ -307,17 +310,32 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
+         if (!get_config_key(hkey, appkey, "AlwaysOffscreen", buffer, size)
+                 && !strcmp(buffer,"disabled"))
+         {
+-            TRACE("Not always rendering backbuffers offscreen.\n");
++            FIXME("Not always rendering backbuffers offscreen.\n");
+             wined3d_settings.always_offscreen = FALSE;
+         }
+         if (!get_config_key(hkey, appkey, "CheckFloatConstants", buffer, size)
+                 && !strcmp(buffer, "enabled"))
+         {
+-            TRACE("Checking relative addressing indices in float constants.\n");
++            FIXME("Checking relative addressing indices in float constants.\n");
+             wined3d_settings.check_float_constants = TRUE;
+         }
++        if (!get_config_key(hkey, appkey, "OverrideVertexShaders", buffer, size) && !strcmp(buffer,"enabled"))
++        {
++          FIXME("Override Vertex Shader Constants\n");
++          wined3d_settings.override_vertex_constants = TRUE;
++        }
++        if (!get_config_key(hkey, appkey, "VertexShaderConstants", buffer, size))
++        {
++          int TmpVertexShaderConstants = atoi(buffer);
++          if (TmpVertexShaderConstants > 0)
++          {
++            wined3d_settings.vertex_constants_number = TmpVertexShaderConstants;
++            FIXME("Use %i Vertex Shader Constants\n", TmpVertexShaderConstants);
++          }
++        }
++
+         if (!get_config_key_dword(hkey, appkey, "MaxShaderModelVS", &wined3d_settings.max_sm_vs))
+-            TRACE("Limiting VS shader model to %u.\n", wined3d_settings.max_sm_vs);
++            FIXME("Limiting VS shader model to %u.\n", wined3d_settings.max_sm_vs);
+         if (!get_config_key_dword(hkey, appkey, "MaxShaderModelHS", &wined3d_settings.max_sm_hs))
+             TRACE("Limiting HS shader model to %u.\n", wined3d_settings.max_sm_hs);
+         if (!get_config_key_dword(hkey, appkey, "MaxShaderModelDS", &wined3d_settings.max_sm_ds))
 diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
-index a60919e..01ae4f1 100644
+index abb950c..3eec6ce 100644
 --- a/dlls/wined3d/wined3d_private.h
 +++ b/dlls/wined3d/wined3d_private.h
-@@ -185,6 +185,9 @@ void wined3d_rb_free(void *ptr) DECLSPEC_HIDDEN;
- #define MAX_SAMPLER_OBJECTS         16
+@@ -190,6 +190,9 @@ void wined3d_rb_free(void *ptr) DECLSPEC_HIDDEN;
  #define MAX_SHADER_RESOURCE_VIEWS   128
  #define MAX_VERTEX_BLENDS           4
+ #define MAX_MULTISAMPLE_TYPES       8
 +#define MAX_VERTEX_BLEND_IND_UBO    255
 +#define MAX_VERTEX_BLEND_IND_UNF    149
 +#define MAX_VB_UPD_WORDS ((MAX_VERTEX_BLEND_IND_UBO+1 + 31)/32)
  
  struct min_lookup
  {
-@@ -1198,6 +1201,8 @@ struct wined3d_context
-     DWORD padding : 15;
+@@ -310,6 +313,9 @@ struct wined3d_settings
+     unsigned int max_sm_ps;
+     unsigned int max_sm_cs;
+     BOOL no_3d;
++  BOOL override_vertex_constants;
++  int vertex_constants_number;
++
+ };
+ 
+ extern struct wined3d_settings wined3d_settings DECLSPEC_HIDDEN;
+@@ -1503,6 +1509,7 @@ struct wined3d_context
+     DWORD last_swizzle_map; /* MAX_ATTRIBS, 16 */
      DWORD shader_update_mask;
      DWORD constant_update_mask;
 +    DWORD blend_mat_update_mask[MAX_VB_UPD_WORDS];
-+    DWORD blend_mat_update_id;
      DWORD                   numbered_array_mask;
      GLenum                  tracking_parm;     /* Which source is tracking current colour         */
      GLenum                  untracked_materials[2];
-@@ -1547,6 +1552,7 @@ enum wined3d_pci_device
+@@ -1828,6 +1835,7 @@ enum wined3d_pci_device
+     CARD_AMD_RADEON_HD6550D         = 0x9640,
+     CARD_AMD_RADEON_HD6600          = 0x6758,
+     CARD_AMD_RADEON_HD6600M         = 0x6741,
++    CARD_AMD_RADEON_HD6770M         = 0x6740,
+     CARD_AMD_RADEON_HD6700          = 0x68ba,
+     CARD_AMD_RADEON_HD6800          = 0x6739,
+     CARD_AMD_RADEON_HD6900          = 0x6719,
+@@ -1837,6 +1845,7 @@ enum wined3d_pci_device
+     CARD_AMD_RADEON_HD7900          = 0x679a,
+     CARD_AMD_RADEON_HD8600M         = 0x6660,
+     CARD_AMD_RADEON_HD8670          = 0x6610,
++    CARD_AMD_RADEON_R7_240          = 0x6613,
+     CARD_AMD_RADEON_HD8770          = 0x665c,
+     CARD_AMD_RADEON_R3              = 0x9830,
+     CARD_AMD_RADEON_R7              = 0x130f,
+@@ -1857,6 +1866,7 @@ enum wined3d_pci_device
      CARD_NVIDIA_GEFORCE_6200        = 0x014f,
      CARD_NVIDIA_GEFORCE_6600GT      = 0x0140,
      CARD_NVIDIA_GEFORCE_6800        = 0x0041,
-+    CARD_NVIDIA_GEFORCE_7300LE      = 0x01d1,
++    CARD_NVIDIA_GEFORCE_7300LE      = 0x01d1, /* GeForce 7300LE */
      CARD_NVIDIA_GEFORCE_7300        = 0x01d7, /* GeForce Go 7300 */
      CARD_NVIDIA_GEFORCE_7400        = 0x01d8,
      CARD_NVIDIA_GEFORCE_7600        = 0x0391,
-@@ -1945,7 +1951,8 @@ struct wined3d_ffp_vs_settings
+@@ -2115,6 +2125,7 @@ struct wined3d_d3d_limits
+     UINT ffp_textures;
+     UINT ffp_blend_stages;
+     UINT ffp_vertex_blend_matrices;
++    UINT ffp_max_vertex_blend_matrix_index;
+ };
+ 
+ typedef void (WINE_GLAPI *wined3d_ffp_attrib_func)(const void *data);
+@@ -2296,7 +2307,8 @@ struct wined3d_ffp_vs_settings
      DWORD texcoords       : 8;  /* MAX_TEXTURES */
      DWORD ortho_fog       : 1;
      DWORD flatshading     : 1;
 -    DWORD padding         : 10;
-+    DWORD vb_indices	  : 1;
++    DWORD vb_indices      : 1;
 +    DWORD padding         : 9;
  
      DWORD texgen[MAX_TEXTURES];
- };
+ 
 diff --git a/dlls/winemac.drv/Makefile.in b/dlls/winemac.drv/Makefile.in
 index c160895..c14285c 100644
 --- a/dlls/winemac.drv/Makefile.in
@@ -1215,7 +2560,7 @@ index c160895..c14285c 100644
  C_SRCS = \
  	clipboard.c \
 diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
-index 3a80f1d..a271029 100644
+index dced704..5d424d3 100644
 --- a/dlls/winemac.drv/cocoa_app.m
 +++ b/dlls/winemac.drv/cocoa_app.m
 @@ -729,11 +729,12 @@ - (NSArray*)modesMatchingMode:(CGDisplayModeRef)mode forDisplay:(CGDirectDisplay
@@ -1233,10 +2578,10 @@ index 3a80f1d..a271029 100644
          for (id candidateModeObject in modes)
          {
 diff --git a/dlls/winemac.drv/display.c b/dlls/winemac.drv/display.c
-index ad01191..474a243 100644
+index 49892ca..1353d10 100644
 --- a/dlls/winemac.drv/display.c
 +++ b/dlls/winemac.drv/display.c
-@@ -553,6 +553,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
+@@ -559,6 +559,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
      CFArrayRef modes = NULL;
  
  #if defined(MAC_OS_X_VERSION_10_8) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
@@ -1244,7 +2589,7 @@ index ad01191..474a243 100644
      if (&kCGDisplayShowDuplicateLowResolutionModes != NULL &&
          CGDisplayModeGetPixelWidth != NULL && CGDisplayModeGetPixelHeight != NULL)
      {
-@@ -661,6 +662,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
+@@ -667,6 +668,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
      }
      else
  #endif
@@ -1252,51 +2597,133 @@ index ad01191..474a243 100644
          modes = CGDisplayCopyAllDisplayModes(display, NULL);
  
      return modes;
+@@ -984,7 +986,7 @@ BOOL CDECL macdrv_EnumDisplaySettingsEx(LPCWSTR devname, DWORD mode,
+     struct macdrv_display *displays = NULL;
+     int num_displays;
+     CGDisplayModeRef display_mode;
+-    int display_mode_bpp;
++    int display_mode_bpp = 24;
+     BOOL synthesized = FALSE;
+     double rotation;
+     uint32_t io_flags;
+diff --git a/dlls/winex11.drv/x11drv_main.c b/dlls/winex11.drv/x11drv_main.c
+index d4f5c84..78537a3 100644
+--- a/dlls/winex11.drv/x11drv_main.c
++++ b/dlls/winex11.drv/x11drv_main.c
+@@ -563,6 +563,8 @@ static BOOL process_attach(void)
+     init_pixmap_formats( display );
+     init_visuals( display, DefaultScreen( display ));
+     screen_bpp = pixmap_formats[default_visual.depth]->bits_per_pixel;
++  // for Pendulumania, hack by Henri Verbeet
++  //    screen_bpp = 8;
+ 
+     XInternAtoms( display, (char **)atom_names, NB_XATOMS - FIRST_XATOM, False, X11DRV_Atoms );
+ 
+diff --git a/fonts/Makefile.in b/fonts/Makefile.in
+index 08c8264..802d666 100644
+--- a/fonts/Makefile.in
++++ b/fonts/Makefile.in
+@@ -1,4 +1,6 @@
+ FONT_SRCS = \
++	arial.sfd \
++	cour.sfd \
+ 	courier.sfd \
+ 	fixedsys.sfd \
+ 	fixedsys_jp.sfd \
+@@ -10,4 +12,5 @@ FONT_SRCS = \
+ 	system.sfd \
+ 	tahoma.sfd \
+ 	tahomabd.sfd \
++	times.sfd \
+ 	wingding.sfd
+diff --git a/fonts/marlett.ttf b/fonts/marlett.ttf
+old mode 100644
+new mode 100755
+index b3122c5..0db6b02
+Binary files a/fonts/marlett.ttf and b/fonts/marlett.ttf differ
+diff --git a/fonts/symbol.ttf b/fonts/symbol.ttf
+old mode 100644
+new mode 100755
+index 1fd5b4e..fd1c033
+Binary files a/fonts/symbol.ttf and b/fonts/symbol.ttf differ
+diff --git a/fonts/tahoma.ttf b/fonts/tahoma.ttf
+old mode 100644
+new mode 100755
+index 4f68d1e..bd62e60
+Binary files a/fonts/tahoma.ttf and b/fonts/tahoma.ttf differ
+diff --git a/fonts/tahomabd.ttf b/fonts/tahomabd.ttf
+old mode 100644
+new mode 100755
+index c01f9e1..0915b52
+Binary files a/fonts/tahomabd.ttf and b/fonts/tahomabd.ttf differ
+diff --git a/fonts/wingding.sfd b/fonts/wingding.sfd
+index c46152b..55723b4 100644
+--- a/fonts/wingding.sfd
++++ b/fonts/wingding.sfd
+@@ -333,7 +333,7 @@ SplineSet
+ EndSplineSet
+ EndChar
+ 
+-StartChar: square2
++StartChar: sqaure2
+ Encoding: 160 160 14
+ Width: 641
+ Flags: W
+diff --git a/fonts/wingding.ttf b/fonts/wingding.ttf
+index 36539ce..b1e9d58 100644
+Binary files a/fonts/wingding.ttf and b/fonts/wingding.ttf differ
+diff --git a/include/wine/svcctl.idl b/include/wine/svcctl.idl
+index cadc5fd..ee0282b 100644
+--- a/include/wine/svcctl.idl
++++ b/include/wine/svcctl.idl
+@@ -68,8 +68,7 @@ interface svcctl
+     /* undocumented access rights */
+     cpp_quote("#define SERVICE_SET_STATUS   0x8000")
+ 
+-cpp_quote("#if 0 /* already defined in winsvc.h / winnt.h */")
+-
++cpp_quote("#if 0 /* already defined in winsvc.h or winnt.h*/")
+ typedef DWORD SECURITY_INFORMATION;
+ 
+ typedef struct _QUERY_SERVICE_CONFIGA {
 diff --git a/tools/makedep.c b/tools/makedep.c
-index 14a26ef..058493f 100644
+index add722f..afa9f13 100644
 --- a/tools/makedep.c
 +++ b/tools/makedep.c
-@@ -1984,27 +1984,33 @@ static struct strarray output_install_rules( const struct makefile *make, struct
-         switch (*dest)
+@@ -2194,11 +2194,11 @@ static struct strarray output_install_rules( const struct makefile *make, struct
+         switch (*files.str[i + 1])
          {
          case 'd':  /* data file */
--            output( "\t%s -m 644 $(INSTALL_DATA_FLAGS) %s $(DESTDIR)%s\n",
-+            output( "\t@%s -m 644 $(INSTALL_DATA_FLAGS) %s $(DESTDIR)%s\n",
-                     install_sh, obj_dir_path( make, file ), dest + 1 );
-+                output( "\t@echo [INSTALL_DATA] %s\n", file );
+-            output( "\t%s -m 644 $(INSTALL_DATA_FLAGS) %s %s\n",
++            output( "\t@%s -m 644 $(INSTALL_DATA_FLAGS) %s %s\n",
+                     install_sh, obj_dir_path( make, file ), dest );
              break;
          case 'D':  /* data file in source dir */
--            output( "\t%s -m 644 $(INSTALL_DATA_FLAGS) %s $(DESTDIR)%s\n",
-+            output( "\t@%s -m 644 $(INSTALL_DATA_FLAGS) %s $(DESTDIR)%s\n",
-                     install_sh, src_dir_path( make, file ), dest + 1 );
-+                output( "\t@echo [INSTALL_DATA] %s\n", file );
+-            output( "\t%s -m 644 $(INSTALL_DATA_FLAGS) %s %s\n",
++            output( "\t@%s -m 644 $(INSTALL_DATA_FLAGS) %s %s\n",
+                     install_sh, src_dir_path( make, file ), dest );
              break;
          case 'p':  /* program file */
--            output( "\tSTRIPPROG=\"$(STRIP)\" %s $(INSTALL_PROGRAM_FLAGS) %s $(DESTDIR)%s\n",
-+            output( "\t@STRIPPROG=\"$(STRIP)\" %s $(INSTALL_PROGRAM_FLAGS) %s $(DESTDIR)%s\n",
-                     install_sh, obj_dir_path( make, file ), dest + 1 );
-+                output( "\t@echo [STRIP] %s\n", file );
+@@ -2206,15 +2206,15 @@ static struct strarray output_install_rules( const struct makefile *make, struct
+                     install_sh, obj_dir_path( make, file ), dest );
              break;
          case 's':  /* script */
--            output( "\t%s $(INSTALL_SCRIPT_FLAGS) %s $(DESTDIR)%s\n",
-+            output( "\t@%s $(INSTALL_SCRIPT_FLAGS) %s $(DESTDIR)%s\n",
-                     install_sh, obj_dir_path( make, file ), dest + 1 );
-+                output( "\t@echo [INSTALL_SCRIPT] %s\n", file );
+-            output( "\t%s $(INSTALL_SCRIPT_FLAGS) %s %s\n",
++            output( "\t@%s $(INSTALL_SCRIPT_FLAGS) %s %s\n",
+                     install_sh, obj_dir_path( make, file ), dest );
              break;
          case 'S':  /* script in source dir */
--            output( "\t%s $(INSTALL_SCRIPT_FLAGS) %s $(DESTDIR)%s\n",
-+            output( "\t@%s $(INSTALL_SCRIPT_FLAGS) %s $(DESTDIR)%s\n",
-                     install_sh, src_dir_path( make, file ), dest + 1 );
-+                output( "\t@echo [INSTALL_SCRIPT] %s\n", file );
+-            output( "\t%s $(INSTALL_SCRIPT_FLAGS) %s %s\n",
++            output( "\t@%s $(INSTALL_SCRIPT_FLAGS) %s %s\n",
+                     install_sh, src_dir_path( make, file ), dest );
+             break;
+         case 't':  /* script in tools dir */
+-            output( "\t%s $(INSTALL_SCRIPT_FLAGS) %s %s\n",
++            output( "\t@%s $(INSTALL_SCRIPT_FLAGS) %s %s\n",
+                     install_sh, tools_dir_path( make, file ), dest );
              break;
          case 'y':  /* symlink */
--            output( "\trm -f $(DESTDIR)%s && $(LN_S) %s $(DESTDIR)%s\n", dest + 1, file, dest + 1 );
-+            output( "\t@rm -f $(DESTDIR)%s && $(LN_S) %s $(DESTDIR)%s\n", dest + 1, file, dest + 1 );
-+                output( "\t@echo [RM] %s\n", file );
-             break;
-         default:
-             assert(0);
-@@ -2105,8 +2111,9 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2401,8 +2401,9 @@ static struct strarray output_sources( const struct makefile *make )
          {
              output( "%s.h: %s%s %s\n", obj_dir_path( make, obj ),
                      tools_dir_path( make, "make_xftmpl" ), tools_ext, source->filename );
@@ -1307,16 +2734,16 @@ index 14a26ef..058493f 100644
              if (source->file->flags & FLAG_INSTALL)
              {
                  strarray_add( &install_rules[INSTALL_DEV], source->name );
-@@ -2127,7 +2134,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2422,7 +2423,7 @@ static struct strarray output_sources( const struct makefile *make )
+         {
              strarray_add( &res_files, strmake( "%s.res", obj ));
-             output( "%s.res: %s %s\n", obj_dir_path( make, obj ),
-                     tools_path( make, "wrc" ), source->filename );
+             output( "%s.res: %s\n", obj_dir_path( make, obj ), source->filename );
 -            output( "\t%s -o $@", tools_path( make, "wrc" ) );
 +            output( "\t@%s -o $@", tools_path( make, "wrc" ) );
              if (make->is_win16) output_filename( "-m16" );
              else output_filenames( target_flags );
              output_filename( "--nostdinc" );
-@@ -2140,6 +2147,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2434,6 +2435,7 @@ static struct strarray output_sources( const struct makefile *make )
                  output_filename( strmake( "--po-dir=%s", top_obj_dir_path( make, "po" )));
                  output_filename( source->filename );
                  output( "\n" );
@@ -1324,23 +2751,40 @@ index 14a26ef..058493f 100644
                  output( "%s.res:", obj_dir_path( make, obj ));
                  output_filenames( mo_files );
                  output( "\n" );
-@@ -2149,6 +2157,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2442,12 +2444,13 @@ static struct strarray output_sources( const struct makefile *make )
              {
                  output_filename( source->filename );
                  output( "\n" );
 +                output( "\t@echo [WRC] $@\n" );
              }
-             output( "%s.res:", obj_dir_path( make, obj ));
-             output_filenames( dependencies );
-@@ -2174,6 +2183,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             output( "%s.res:", obj_dir_path( make, obj ));
-             output_filenames( dependencies );
+             if (source->file->flags & FLAG_RC_PO)
+             {
+                 strarray_add( &clean_files, strmake( "%s.pot", obj ));
+                 output( "%s.pot: %s\n", obj_dir_path( make, obj ), source->filename );
+-                output( "\t%s -O pot -o $@", tools_path( make, "wrc" ) );
++                output( "\t@%s -O pot -o $@", tools_path( make, "wrc" ) );
+                 if (make->is_win16) output_filename( "-m16" );
+                 else output_filenames( target_flags );
+                 output_filename( "--nostdinc" );
+@@ -2468,7 +2471,7 @@ static struct strarray output_sources( const struct makefile *make )
+             strarray_add( &res_files, strmake( "%s.res", obj ));
+             strarray_add( &clean_files, strmake( "%s.pot", obj ));
+             output( "%s.res: %s\n", obj_dir_path( make, obj ), source->filename );
+-            output( "\t%s -U -O res -o $@ %s", tools_path( make, "wmc" ), source->filename );
++            output( "\t@%s -U -O res -o $@ %s", tools_path( make, "wmc" ), source->filename );
+             if (mo_files.count)
+             {
+                 output_filename( strmake( "--po-dir=%s", top_obj_dir_path( make, "po" )));
+@@ -2478,7 +2481,7 @@ static struct strarray output_sources( const struct makefile *make )
+             }
              output( "\n" );
-+       //     output( "\t@echo [WMC] $@\n" );
-         }
-         else if (!strcmp( ext, "idl" ))  /* IDL file */
-         {
-@@ -2206,7 +2216,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+             output( "%s.pot: %s\n", obj_dir_path( make, obj ), source->filename );
+-            output( "\t%s -O pot -o $@ %s", tools_path( make, "wmc" ), source->filename );
++            output( "\t@%s -O pot -o $@ %s", tools_path( make, "wmc" ), source->filename );
+             output( "\n" );
+             output( "%s.pot %s.res:", obj_dir_path( make, obj ), obj_dir_path( make, obj ));
+             output_filename( tools_path( make, "wmc" ));
+@@ -2516,7 +2519,7 @@ static struct strarray output_sources( const struct makefile *make )
              if (!targets.count) continue;
              output_filenames_obj_dir( make, targets );
              output( ": %s\n", tools_path( make, "widl" ));
@@ -1349,7 +2793,7 @@ index 14a26ef..058493f 100644
              output_filenames( target_flags );
              output_filenames( includes );
              output_filenames( make->define_args );
-@@ -2214,6 +2224,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2524,6 +2527,7 @@ static struct strarray output_sources( const struct makefile *make )
              output_filenames( get_expanded_make_var_array( make, "EXTRAIDLFLAGS" ));
              output_filename( source->filename );
              output( "\n" );
@@ -1357,38 +2801,18 @@ index 14a26ef..058493f 100644
              output_filenames_obj_dir( make, targets );
              output( ": %s", source->filename );
              output_filenames( dependencies );
-@@ -2246,7 +2257,8 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             strarray_add( &in_files, xstrdup(obj) );
-             strarray_add( &all_targets, xstrdup(obj) );
-             output( "%s: %s\n", obj_dir_path( make, obj ), source->filename );
--            output( "\t$(SED_CMD) %s >$@ || (rm -f $@ && false)\n", source->filename );
-+            output( "\t@$(SED_CMD) %s >$@ || (rm -f $@ && false)\n", source->filename );
-+            output( "\t@echo [SED] $@\n" );
-             output( "%s:", obj_dir_path( make, obj ));
-             output_filenames( dependencies );
-             output( "\n" );
-@@ -2259,8 +2271,9 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2569,8 +2573,9 @@ static struct strarray output_sources( const struct makefile *make )
              if (fontforge && !make->src_dir)
              {
                  output( "%s: %s\n", ttf_file, source->filename );
 -                output( "\t%s -script %s %s $@\n",
 +                output( "\t@%s -script %s %s $@\n",
-                         fontforge, top_dir_path( make, "fonts/genttf.ff" ), source->filename );
+                         fontforge, top_src_dir_path( make, "fonts/genttf.ff" ), source->filename );
 +                output( "\t@echo [TTF] %s\n", source->filename );
                  if (!(source->file->flags & FLAG_SFD_FONTS)) output( "all: %s\n", ttf_file );
              }
              if (source->file->flags & FLAG_INSTALL)
-@@ -2280,7 +2293,8 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-                     strarray_add( &all_targets, xstrdup( font ));
-                     output( "%s: %s %s\n", obj_dir_path( make, font ),
-                             tools_path( make, "sfnt2fon" ), ttf_file );
--                    output( "\t%s -o $@ %s %s\n", tools_path( make, "sfnt2fon" ), ttf_file, args );
-+                    output( "\t@%s -o $@ %s %s\n", tools_path( make, "sfnt2fon" ), ttf_file, args );
-+                    output( "\t@echo [SFNT] %s\n", ttf_file );
-                     strarray_add( &install_rules[INSTALL_LIB], xstrdup(font) );
-                     strarray_add( &install_rules[INSTALL_LIB], strmake( "d$(fontdir)/%s", font ));
-                 }
-@@ -2329,7 +2343,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2645,7 +2650,7 @@ static struct strarray output_sources( const struct makefile *make )
              if (source->file->flags & FLAG_C_IMPLIB) strarray_add( &implib_objs, strmake( "%s.o", obj ));
              strarray_add( &object_files, strmake( "%s.o", obj ));
              output( "%s.o: %s\n", obj_dir_path( make, obj ), source->filename );
@@ -1397,7 +2821,7 @@ index 14a26ef..058493f 100644
              output_filenames( includes );
              output_filenames( make->define_args );
              output_filenames( extradefs );
-@@ -2342,11 +2356,12 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2658,11 +2663,12 @@ static struct strarray output_sources( const struct makefile *make )
              output_filenames( cpp_flags );
              output_filename( "$(CFLAGS)" );
              output( "\n" );
@@ -1411,54 +2835,7 @@ index 14a26ef..058493f 100644
                  output_filenames( includes );
                  output_filenames( make->define_args );
                  output_filenames( extradefs );
-@@ -2354,14 +2369,16 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-                 output_filenames( cpp_flags );
-                 output_filename( "$(CFLAGS)" );
-                 output( "\n" );
-+              output( "\t@echo [CROSSCC] %s\n", source->filename);
-             }
-             if (make->testdll && !strcmp( ext, "c" ) && !(source->file->flags & FLAG_GENERATED))
-             {
-                 strarray_add( &ok_files, strmake( "%s.ok", obj ));
-                 output( "%s.ok:\n", obj_dir_path( make, obj ));
--                output( "\t%s $(RUNTESTFLAGS) -T %s -M %s -p %s%s %s && touch $@\n",
-+                output( "\t@%s $(RUNTESTFLAGS) -T %s -M %s -p %s%s %s && touch $@\n",
-                         top_dir_path( make, "tools/runtest" ), top_obj_dir_path( make, "" ), make->testdll,
-                         replace_extension( make->testdll, ".dll", "_test.exe" ), dll_ext, obj );
-+                output( "\t@echo [RUN_TEST] $@\n");
-             }
-             if (!strcmp( ext, "c" ) && !(source->file->flags & FLAG_GENERATED))
-                 strarray_add( &c2man_files, source->filename );
-@@ -2381,7 +2398,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-         output( "%s: %s", obj_dir_path( make, "rsrc.pot" ), tools_path( make, "wrc" ) );
-         output_filenames( po_files );
-         output( "\n" );
--        output( "\t%s -O pot -o $@", tools_path( make, "wrc" ));
-+        output( "\t@%s -O pot -o $@", tools_path( make, "wrc" ));
-         if (make->is_win16) output_filename( "-m16" );
-         else output_filenames( target_flags );
-         output_filename( "--nostdinc" );
-@@ -2389,6 +2406,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-         output_filenames( make->define_args );
-         output_filenames( po_files );
-         output( "\n" );
-+        output( "\t@echo [WRC] $@\n" );
-         strarray_add( &clean_files, "rsrc.pot" );
-     }
- 
-@@ -2397,9 +2415,10 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-         output( "%s: %s", obj_dir_path( make, "msg.pot" ), tools_path( make, "wmc" ));
-         output_filenames( mc_files );
-         output( "\n" );
--        output( "\t%s -O pot -o $@", tools_path( make, "wmc" ));
-+        output( "\t@%s -O pot -o $@", tools_path( make, "wmc" ));
-         output_filenames( mc_files );
-         output( "\n" );
-+        output( "\t@echo [WMC] $@\n" );
-         strarray_add( &clean_files, "msg.pot" );
-     }
- 
-@@ -2407,9 +2426,10 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2698,9 +2704,10 @@ static struct strarray output_sources( const struct makefile *make )
      {
          output( "%s: %s %s\n", obj_dir_path( make, "dlldata.c" ),
                  tools_path( make, "widl" ), src_dir_path( make, "Makefile.in" ));
@@ -1470,16 +2847,16 @@ index 14a26ef..058493f 100644
      }
  
      if (make->module && !make->staticlib)
-@@ -2452,7 +2472,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-         output_filenames_obj_dir( make, object_files );
-         output_filenames_obj_dir( make, res_files );
+@@ -2744,7 +2751,7 @@ static struct strarray output_sources( const struct makefile *make )
+         output_filename( tools_path( make, "winebuild" ));
+         output_filename( tools_path( make, "winegcc" ));
          output( "\n" );
 -        output( "\t%s -o $@", tools_path( make, "winegcc" ));
 +        output( "\t@%s -o $@", tools_path( make, "winegcc" ));
          output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
          if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
          output_filenames( target_flags );
-@@ -2468,6 +2488,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2760,6 +2767,7 @@ static struct strarray output_sources( const struct makefile *make )
          output_filenames( all_libs );
          output_filename( "$(LDFLAGS)" );
          output( "\n" );
@@ -1487,33 +2864,7 @@ index 14a26ef..058493f 100644
  
          if (spec_file && make->importlib)
          {
-@@ -2476,10 +2497,11 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             {
-                 strarray_add( &clean_files, strmake( "lib%s.def", make->importlib ));
-                 output( "%s.def: %s %s\n", importlib_path, tools_path( make, "winebuild" ), spec_file );
--                output( "\t%s -w --def -o $@ --export %s", tools_path( make, "winebuild" ), spec_file );
-+                output( "\t@%s -w --def -o $@ --export %s", tools_path( make, "winebuild" ), spec_file );
-                 output_filenames( target_flags );
-                 if (make->is_win16) output_filename( "-m16" );
-                 output( "\n" );
-+                output( "\t@echo [WINEBUILD] $@\n");
-                 add_install_rule( make, install_rules, make->importlib,
-                                   strmake( "lib%s.def", make->importlib ),
-                                   strmake( "d$(dlldir)/lib%s.def", make->importlib ));
-@@ -2505,10 +2527,11 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-                 output( "%s.a: %s %s", importlib_path, tools_path( make, "winebuild" ), spec_file );
-                 output_filenames_obj_dir( make, implib_objs );
-                 output( "\n" );
--                output( "\t%s -w --implib -o $@ --export %s", tools_path( make, "winebuild" ), spec_file );
-+                output( "\t@%s -w --implib -o $@ --export %s", tools_path( make, "winebuild" ), spec_file );
-                 output_filenames( target_flags );
-                 output_filenames_obj_dir( make, implib_objs );
-                 output( "\n" );
-+                output( "\t@echo [WINEBUILD] $@\n");
-                 add_install_rule( make, install_rules, make->importlib,
-                                   strmake( "lib%s.a", make->importlib ),
-                                   strmake( "d$(dlldir)/lib%s.a", make->importlib ));
-@@ -2520,10 +2543,11 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2797,10 +2805,11 @@ static struct strarray output_sources( const struct makefile *make )
                  output( "%s.cross.a: %s %s", importlib_path, tools_path( make, "winebuild" ), spec_file );
                  output_filenames_obj_dir( make, cross_files );
                  output( "\n" );
@@ -1526,75 +2877,7 @@ index 14a26ef..058493f 100644
              }
          }
  
-@@ -2532,37 +2556,41 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             if (c2man_files.count)
-             {
-                 output( "manpages::\n" );
--                output( "\t%s -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-+                output( "\t@%s -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-                 output_filename( strmake( "-R%s", top_dir_path( make, "" )));
-                 output_filename( strmake( "-I%s", top_dir_path( make, "include" )));
-                 output_filename( strmake( "-o %s/man%s",
-                                           top_obj_dir_path( make, "documentation" ), man_ext ));
-                 output_filenames( c2man_files );
-                 output( "\n" );
-+                output( "\t@echo [C2MAN] $@\n" );
-                 output( "htmlpages::\n" );
--                output( "\t%s -Th -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-+                output( "\t@%s -Th -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-                 output_filename( strmake( "-R%s", top_dir_path( make, "" )));
-                 output_filename( strmake( "-I%s", top_dir_path( make, "include" )));
-                 output_filename( strmake( "-o %s",
-                                           top_obj_dir_path( make, "documentation/html" )));
-                 output_filenames( c2man_files );
-                 output( "\n" );
-+                output( "\t@echo [HTML] $@\n" );
-                 output( "sgmlpages::\n" );
--                output( "\t%s -Ts -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-+                output( "\t@%s -Ts -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-                 output_filename( strmake( "-R%s", top_dir_path( make, "" )));
-                 output_filename( strmake( "-I%s", top_dir_path( make, "include" )));
-                 output_filename( strmake( "-o %s",
-                                           top_obj_dir_path( make, "documentation/api-guide" )));
-                 output_filenames( c2man_files );
-                 output( "\n" );
-+                output( "\t@echo [SGML] $@\n" );
-                 output( "xmlpages::\n" );
--                output( "\t%s -Tx -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-+                output( "\t@%s -Tx -w %s", top_dir_path( make, "tools/c2man.pl" ), spec_file );
-                 output_filename( strmake( "-R%s", top_dir_path( make, "" )));
-                 output_filename( strmake( "-I%s", top_dir_path( make, "include" )));
-                 output_filename( strmake( "-o %s",
-                                           top_obj_dir_path( make, "documentation/api-guide-xml" )));
-                 output_filenames( c2man_files );
-                 output( "\n" );
-+                output( "\t@echo [XML] $@\n" );
-                 strarray_add( &phony_targets, "manpages" );
-                 strarray_add( &phony_targets, "htmlpages" );
-                 strarray_add( &phony_targets, "sgmlpages" );
-@@ -2595,9 +2623,10 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             output( "%s:", obj_dir_path( make, name ));
-             output_filenames_obj_dir( make, crossobj_files );
-             output( "\n\trm -f $@\n" );
--            output( "\t%s-ar $(ARFLAGS) $@", crosstarget );
-+            output( "\t@%s-ar $(ARFLAGS) $@", crosstarget );
-             output_filenames_obj_dir( make, crossobj_files );
-             output( "\n\t%s-ranlib $@\n", crosstarget );
-+            output( "\t@echo [RANLIB] $@\n");
-         }
-     }
- 
-@@ -2642,7 +2671,8 @@ static struct strarray output_sources( const struct makefile *make, struct strar
- 
-         if (!strncmp( def_file, "lib", 3 )) def_file += 3;
-         output( "%s: %s\n", obj_dir_path( make, make->importlib ), src_dir_path( make, def_file ));
--        output( "\t%s -l $@ -d %s\n", dlltool, src_dir_path( make, def_file ));
-+        output( "\t@%s -l $@ -d %s\n", dlltool, src_dir_path( make, def_file ));
-+        output( "\t@echo [MAKELIB] $@\n");
-         add_install_rule( make, install_rules, make->importlib, make->importlib,
-                           strmake( "d$(libdir)/%s", make->importlib ));
-         strarray_add( &all_targets, make->importlib );
-@@ -2662,7 +2692,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2940,7 +2949,7 @@ static struct strarray output_sources( const struct makefile *make )
          strarray_add( &all_targets, strmake( "%s%s", testmodule, dll_ext ));
          strarray_add( &clean_files, strmake( "%s%s", stripped, dll_ext ));
          output( "%s%s:\n", obj_dir_path( make, testmodule ), dll_ext );
@@ -1603,7 +2886,7 @@ index 14a26ef..058493f 100644
          output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
          if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
          output_filenames( target_flags );
-@@ -2673,8 +2703,9 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2951,8 +2960,9 @@ static struct strarray output_sources( const struct makefile *make )
          output_filenames( all_libs );
          output_filename( "$(LDFLAGS)" );
          output( "\n" );
@@ -1614,7 +2897,7 @@ index 14a26ef..058493f 100644
          output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
          if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
          output_filenames( target_flags );
-@@ -2686,6 +2717,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
+@@ -2964,6 +2974,7 @@ static struct strarray output_sources( const struct makefile *make )
          output_filenames( all_libs );
          output_filename( "$(LDFLAGS)" );
          output( "\n" );
@@ -1622,20 +2905,12 @@ index 14a26ef..058493f 100644
          output( "%s%s %s%s:", obj_dir_path( make, testmodule ), dll_ext,
                  obj_dir_path( make, stripped ), dll_ext );
          output_filenames_obj_dir( make, object_files );
-@@ -2708,7 +2740,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             output_filenames_obj_dir( make, crossobj_files );
-             output_filenames_obj_dir( make, res_files );
+@@ -2996,7 +3007,7 @@ static struct strarray output_sources( const struct makefile *make )
+             output_filename( tools_path( make, "winebuild" ));
+             output_filename( tools_path( make, "winegcc" ));
              output( "\n" );
 -            output( "\t%s -o $@ -b %s", tools_path( make, "winegcc" ), crosstarget );
 +            output( "\t@%s -o $@ -b %s", tools_path( make, "winegcc" ), crosstarget );
              output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
              if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
              output_filename( "--lib-suffix=.cross.a" );
-@@ -2717,6 +2749,7 @@ static struct strarray output_sources( const struct makefile *make, struct strar
-             output_filenames( all_libs );
-             output_filename( "$(LDFLAGS)" );
-             output( "\n" );
-+            output( "\t@echo [WINEGCC] $@\n" );
-             strarray_add( &phony_targets, obj_dir_path( make, "crosstest" ));
-             if (make->obj_dir) output( "crosstest: %s\n", obj_dir_path( make, "crosstest" ));
-         }
