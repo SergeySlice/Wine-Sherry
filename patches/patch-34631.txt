@@ -13,4 +13,3 @@ index 2ef49fa..55801a3 100644
 +    }
      return wow_handlers.create_window( &cs, className, instance, TRUE );
  }
- 
