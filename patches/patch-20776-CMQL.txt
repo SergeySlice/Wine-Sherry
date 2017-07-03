@@ -1,0 +1,15 @@
+diff --git a/dlls/d3d11/device.c b/dlls/d3d11/device.c
+index 8fc6cb1..f67dcfe 100644
+--- a/dlls/d3d11/device.c
++++ b/dlls/d3d11/device.c
+@@ -4450,7 +4450,9 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CheckMultisampleQualityLevels(ID3D
+     FIXME("iface %p, format %s, sample_count %u, quality_level_count %p stub!\n",
+             iface, debug_dxgi_format(format), sample_count, quality_level_count);
+ 
+-    return E_NOTIMPL;
++    //    return E_NOTIMPL;
++    *quality_level_count = 4;
++    return S_OK;
+ }
+ 
+ static void STDMETHODCALLTYPE d3d10_device_CheckCounterInfo(ID3D10Device1 *iface, D3D10_COUNTER_INFO *counter_info)
