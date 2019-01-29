@@ -1,0 +1,13 @@
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index 55a5659..1f01d7f 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -1280,7 +1280,7 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
+     {
+         LIST_FOR_EACH_ENTRY(lconst, &shader->constantsF, struct wined3d_shader_lconst, entry)
+         {
+-            shader_addline(buffer, "const vec4 %s_lc%u = ", prefix, lconst->idx);
++            shader_addline(buffer, "uniform vec4 %s_lc%u = ", prefix, lconst->idx);
+             shader_glsl_append_imm_vec4(buffer, (const float *)lconst->value);
+             shader_addline(buffer, ";\n");
+         }

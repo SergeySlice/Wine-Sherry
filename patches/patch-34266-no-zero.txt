@@ -1,0 +1,107 @@
+diff -urN wine-1.7.11-orig/dlls/wined3d/glsl_shader.c wine-1.7.11/dlls/wined3d/glsl_shader.c
+--- wine-1.7.11-orig/dlls/wined3d/glsl_shader.c	2014-01-18 04:48:48 +0900
++++ wine-1.7.11/dlls/wined3d/glsl_shader.c	2014-03-17 19:07:55 +0900
+@@ -2668,6 +2668,8 @@
+     const char *prefix, *suffix;
+     unsigned int dst_size;
+     DWORD dst_write_mask;
++    int use_zero_mul_hack = 0;
++    const char *zero_mul_hack_value;
+ 
+     dst_write_mask = shader_glsl_append_dst(buffer, ins);
+     dst_size = shader_glsl_get_write_mask_size(dst_write_mask);
+@@ -2686,16 +2688,22 @@
+         case WINED3DSIH_LOGP:
+             prefix = "log2(abs(";
+             suffix = "))";
++            use_zero_mul_hack = 1;
++            zero_mul_hack_value = "-1.0e10";
+             break;
+ 
+         case WINED3DSIH_RCP:
+             prefix = "1.0 / ";
+             suffix = "";
++            use_zero_mul_hack = 1;
++            zero_mul_hack_value = "1.0e10";
+             break;
+ 
+         case WINED3DSIH_RSQ:
+             prefix = "inversesqrt(abs(";
+             suffix = "))";
++            use_zero_mul_hack = 1;
++            zero_mul_hack_value = "1.0e10";
+             break;
+ 
+         default:
+@@ -2706,9 +2714,29 @@
+     }
+ 
+     if (dst_size > 1)
+-        shader_addline(buffer, "vec%u(%s%s%s));\n", dst_size, prefix, src0_param.param_str, suffix);
++    {
++        if (use_zero_mul_hack)
++        {
++            shader_addline(buffer, "mix(vec%u(%s%s%s), vec%u(%s), equal(vec%u(%s), vec%u(0.0))));\n",
++                           dst_size, prefix, src0_param.param_str, suffix,
++                           dst_size, zero_mul_hack_value,
++                           dst_size, src0_param.param_str, dst_size);
++        }
++        else
++        {
++            shader_addline(buffer, "vec%u(%s%s%s));\n",
++                           dst_size, prefix, src0_param.param_str, suffix);
++        }
++    }
+     else
+-        shader_addline(buffer, "%s%s%s);\n", prefix, src0_param.param_str, suffix);
++    {
++        shader_addline(buffer, "%s%s%s%s%s%s%s);\n",
++                       use_zero_mul_hack ? src0_param.param_str : "",
++                       use_zero_mul_hack ? " == 0.0 ? " : "",
++                       use_zero_mul_hack ? zero_mul_hack_value : "",
++                       use_zero_mul_hack ? " : " : "",
++                       prefix, src0_param.param_str, suffix);
++    }
+ }
+ 
+ /** Process the WINED3DSIO_EXPP instruction in GLSL:
+@@ -4311,7 +4339,8 @@
+ 
+     shader_buffer_clear(buffer);
+ 
+-    shader_addline(buffer, "#version 120\n");
++    /* NB: 120 -> 130 for http://bugs.winehq.org/show_bug.cgi?id=34266 workaround */
++    shader_addline(buffer, "#version 130\n");
+ 
+     if (ps_major < 3)
+     {
+@@ -4462,7 +4491,8 @@
+     priv_ctx.cur_ps_args = args;
+     priv_ctx.cur_np2fixup_info = np2fixup_info;
+ 
+-    shader_addline(buffer, "#version 120\n");
++    /* NB: 120 -> 130 for http://bugs.winehq.org/show_bug.cgi?id=34266 workaround */
++    shader_addline(buffer, "#version 130\n");
+ 
+     if (gl_info->supported[ARB_SHADER_BIT_ENCODING])
+         shader_addline(buffer, "#extension GL_ARB_shader_bit_encoding : enable\n");
+@@ -4521,7 +4551,8 @@
+     /* Create the hw GLSL shader program and assign it as the shader->prgId */
+     GLhandleARB shader_obj = GL_EXTCALL(glCreateShaderObjectARB(GL_VERTEX_SHADER_ARB));
+ 
+-    shader_addline(buffer, "#version 120\n");
++    /* NB: 120 -> 130 for http://bugs.winehq.org/show_bug.cgi?id=34266 workaround */
++    shader_addline(buffer, "#version 130\n");
+ 
+     if (gl_info->supported[ARB_SHADER_BIT_ENCODING])
+         shader_addline(buffer, "#extension GL_ARB_shader_bit_encoding : enable\n");
+@@ -4592,7 +4623,8 @@
+ 
+     shader_id = GL_EXTCALL(glCreateShaderObjectARB(GL_GEOMETRY_SHADER_ARB));
+ 
+-    shader_addline(buffer, "#version 120\n");
++    /* NB: 120 -> 130 for http://bugs.winehq.org/show_bug.cgi?id=34266 workaround */
++    shader_addline(buffer, "#version 130\n");
+ 
+     if (gl_info->supported[ARB_GEOMETRY_SHADER4])
+         shader_addline(buffer, "#extension GL_ARB_geometry_shader4 : enable\n");

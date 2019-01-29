@@ -1,0 +1,38 @@
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index da003e1..8284e20 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -2124,6 +2124,12 @@ static void texture3d_upload_data(struct wined3d_texture *texture, unsigned int
+             texture, sub_resource_idx, context, debug_box(box),
+             data->buffer_object, data->addr, row_pitch, slice_pitch);
+ 
++    if (texture->resource.format_flags & WINED3DFMT_FLAG_BLOCKS)
++    {
++        FIXME("Not supported for block formats.\n");
++        return;
++    }
++
+     width = wined3d_texture_get_level_width(texture, level);
+     height = wined3d_texture_get_level_height(texture, level);
+     depth = wined3d_texture_get_level_depth(texture, level);
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index f3001e5..b3dc807 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -3317,16 +3317,6 @@ static void apply_format_fixups(struct wined3d_adapter *adapter, struct wined3d_
+      *
+      * Note that GL_NV_texture_compression_vtc adds this functionality to OpenGL, but the
+      * block layout is not compatible with the one used by d3d. See volume_dxt5_test. */
+-    idx = get_format_idx(WINED3DFMT_DXT1);
+-    gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+-    idx = get_format_idx(WINED3DFMT_DXT2);
+-    gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+-    idx = get_format_idx(WINED3DFMT_DXT3);
+-    gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+-    idx = get_format_idx(WINED3DFMT_DXT4);
+-    gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+-    idx = get_format_idx(WINED3DFMT_DXT5);
+-    gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+     idx = get_format_idx(WINED3DFMT_BC1_UNORM);
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+     idx = get_format_idx(WINED3DFMT_BC1_UNORM_SRGB);

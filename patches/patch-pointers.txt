@@ -1,0 +1,59 @@
+commit 8cc5b07e9d0aedffd4251d2e8942cb8368920bf8
+Author: Martin Storsjo <martin@martin.st>
+Date:   Wed Nov 4 12:25:27 2015 +0200
+
+    ucrtbase: Implement _get_stream_buffer_pointers.
+    
+    Signed-off-by: Martin Storsjo <martin@martin.st>
+    Signed-off-by: Piotr Caban <piotr@codeweavers.com>
+    Signed-off-by: Alexandre Julliard <julliard@winehq.org>
+
+diff --git a/dlls/api-ms-win-crt-stdio-l1-1-0/api-ms-win-crt-stdio-l1-1-0.spec b/dlls/api-ms-win-crt-stdio-l1-1-0/api-ms-win-crt-stdio-l1-1-0.spec
+index 2db8222..30570da 100644
+--- a/dlls/api-ms-win-crt-stdio-l1-1-0/api-ms-win-crt-stdio-l1-1-0.spec
++++ b/dlls/api-ms-win-crt-stdio-l1-1-0/api-ms-win-crt-stdio-l1-1-0.spec
+@@ -55,7 +55,7 @@
+ @ cdecl _get_fmode(ptr) ucrtbase._get_fmode
+ @ cdecl _get_osfhandle(long) ucrtbase._get_osfhandle
+ @ cdecl _get_printf_count_output() ucrtbase._get_printf_count_output
+-@ stub _get_stream_buffer_pointers
++@ cdecl _get_stream_buffer_pointers(ptr ptr ptr ptr) ucrtbase._get_stream_buffer_pointers
+ @ cdecl _getc_nolock(ptr) ucrtbase._getc_nolock
+ @ cdecl _getcwd(str long) ucrtbase._getcwd
+ @ cdecl _getdcwd(long str long) ucrtbase._getdcwd
+diff --git a/dlls/msvcrt/file.c b/dlls/msvcrt/file.c
+index f1de534..22bb925 100644
+--- a/dlls/msvcrt/file.c
++++ b/dlls/msvcrt/file.c
+@@ -5303,3 +5303,18 @@ int CDECL MSVCRT__setmaxstdio(int newmax)
+     MSVCRT_max_streams = newmax;
+     return MSVCRT_max_streams;
+ }
++
++/*********************************************************************
++ *		_get_stream_buffer_pointers (UCRTBASE.@)
++ */
++int CDECL MSVCRT__get_stream_buffer_pointers(MSVCRT_FILE *file, char*** base,
++                                             char*** ptr, int** count)
++{
++    if (base)
++        *base = &file->_base;
++    if (ptr)
++        *ptr = &file->_ptr;
++    if (count)
++        *count = &file->_cnt;
++    return 0;
++}
+diff --git a/dlls/ucrtbase/ucrtbase.spec b/dlls/ucrtbase/ucrtbase.spec
+index 6877bef..4e8b3bb 100644
+--- a/dlls/ucrtbase/ucrtbase.spec
++++ b/dlls/ucrtbase/ucrtbase.spec
+@@ -373,7 +373,7 @@
+ @ cdecl _get_pgmptr(ptr)
+ @ cdecl _get_printf_count_output() MSVCRT__get_printf_count_output
+ @ stub _get_purecall_handler
+-@ stub _get_stream_buffer_pointers
++@ cdecl _get_stream_buffer_pointers(ptr ptr ptr ptr) MSVCRT__get_stream_buffer_pointers
+ @ cdecl _get_terminate() MSVCRT__get_terminate
+ @ stub _get_thread_local_invalid_parameter_handler
+ @ cdecl _get_timezone(ptr)

@@ -1,0 +1,34 @@
+commit dc97c34cfac749eab81af0381f9aacb3f5ac4327
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Tue Feb 9 11:51:39 2016 +0300
+
+    avoid NULL pointer dereferencing
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/ddraw/surface.c b/dlls/ddraw/surface.c
+index da1e1b5..3d456f1 100644
+--- a/dlls/ddraw/surface.c
++++ b/dlls/ddraw/surface.c
+@@ -469,6 +469,10 @@ static HRESULT ddraw_surface_set_palette(struct ddraw_surface *surface, IDirectD
+ 
+     TRACE("iface %p, palette %p.\n", surface, palette);
+ 
++    if (!surface) {
++        return DDERR_INVALIDPARAMS;
++    }
++
+     if (palette_impl && palette_impl->flags & DDPCAPS_ALPHA
+             && !(surface->surface_desc.ddsCaps.dwCaps & DDSCAPS_TEXTURE))
+     {
+@@ -476,10 +480,6 @@ static HRESULT ddraw_surface_set_palette(struct ddraw_surface *surface, IDirectD
+         return DDERR_INVALIDSURFACETYPE;
+     }
+     
+-    if (!surface) {
+-        return DDERR_INVALIDPARAMS;
+-    }
+-
+     if (!format_is_paletteindexed(&surface->surface_desc.u4.ddpfPixelFormat))
+         return DDERR_INVALIDPIXELFORMAT;
+ 

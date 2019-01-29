@@ -1,0 +1,23 @@
+commit e27b7b411c9d6152d20d486dd77ae93962ecad0a
+Author: Matteo Bruni <mbruni@codeweavers.com>
+Date:   Thu Feb 13 15:46:26 2014 +0100
+
+    d3dx9: Hack, don't fail if the texture data can't be loaded.
+
+diff --git a/dlls/d3dx9_36/texture.c b/dlls/d3dx9_36/texture.c
+index 1f2a951..e6c14b3 100644
+--- a/dlls/d3dx9_36/texture.c
++++ b/dlls/d3dx9_36/texture.c
+@@ -662,9 +662,9 @@ HRESULT WINAPI D3DXCreateTextureFromFileInMemoryEx(struct IDirect3DDevice9 *devi
+     if (FAILED(hr))
+     {
+         FIXME("Texture loading failed.\n");
+-        IDirect3DTexture9_Release(*texptr);
+-        *texture = NULL;
+-        return hr;
++        //IDirect3DTexture9_Release(*texptr);
++        //*texture = NULL;
++        //return hr;
+     }
+ 
+     loaded_miplevels = min(IDirect3DTexture9_GetLevelCount(*texptr), imginfo.MipLevels);

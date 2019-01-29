@@ -1,0 +1,21 @@
+commit 3f56e5bd9283639e426136124a0bf181c7a93023
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Tue Jan 12 13:50:09 2016 +0300
+
+    set EmuVideoMem
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/wined3d_main.c b/dlls/wined3d/wined3d_main.c
+index 0543d97..49facfa 100644
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -261,7 +261,7 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
+                 wined3d_settings.pci_vendor_id = pci_vendor_id;
+             }
+         }
+-        if ( !get_config_key( hkey, appkey, "VideoMemorySize", buffer, size) )
++        if ( !get_config_key( hkey, appkey, "EmuVideoMemorySize", buffer, size) )
+         {
+             int TmpVideoMemorySize = atoi(buffer);
+             if(TmpVideoMemorySize > 0)

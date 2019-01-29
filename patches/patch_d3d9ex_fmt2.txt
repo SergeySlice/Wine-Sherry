@@ -1,0 +1,118 @@
+diff --git a/dlls/d3d9/device.c b/dlls/d3d9/device.c
+index 0b1a77a..9565eec 100644
+--- a/dlls/d3d9/device.c
++++ b/dlls/d3d9/device.c
+@@ -71,6 +71,8 @@ D3DFORMAT d3dformat_from_wined3dformat(enum wined3d_format_id format)
+         case WINED3DFMT_R16G16_SNORM: return D3DFMT_V16U16;
+         case WINED3DFMT_R10G10B10_SNORM_A2_UNORM: return D3DFMT_A2W10V10U10;
+         case WINED3DFMT_D16_LOCKABLE: return D3DFMT_D16_LOCKABLE;
++        case WINED3DFMT_D32_LOCKABLE: return D3DFMT_D32_LOCKABLE;
++        case WINED3DFMT_S8_LOCKABLE: return D3DFMT_S8_LOCKABLE;
+         case WINED3DFMT_D32_UNORM: return D3DFMT_D32;
+         case WINED3DFMT_S1_UINT_D15_UNORM: return D3DFMT_D15S1;
+         case WINED3DFMT_D24_UNORM_S8_UINT: return D3DFMT_D24S8;
+@@ -136,6 +138,8 @@ enum wined3d_format_id wined3dformat_from_d3dformat(D3DFORMAT format)
+         case D3DFMT_V16U16: return WINED3DFMT_R16G16_SNORM;
+         case D3DFMT_A2W10V10U10: return WINED3DFMT_R10G10B10_SNORM_A2_UNORM;
+         case D3DFMT_D16_LOCKABLE: return WINED3DFMT_D16_LOCKABLE;
++        case D3DFMT_D32_LOCKABLE: return WINED3DFMT_D32_LOCKABLE;
++        case D3DFMT_S8_LOCKABLE: return WINED3DFMT_S8_LOCKABLE;
+         case D3DFMT_D32: return WINED3DFMT_D32_UNORM;
+         case D3DFMT_D15S1: return WINED3DFMT_S1_UINT_D15_UNORM;
+         case D3DFMT_D24S8: return WINED3DFMT_D24_UNORM_S8_UINT;
+diff --git a/dlls/d3d9/tests/device.c b/dlls/d3d9/tests/device.c
+index 174fc13..6934528 100644
+--- a/dlls/d3d9/tests/device.c
++++ b/dlls/d3d9/tests/device.c
+@@ -2199,6 +2199,8 @@ static void test_display_modes(void)
+     TEST_FMT(D3DFMT_R8G8_B8G8, D3DERR_INVALIDCALL);
+ 
+     TEST_FMT(D3DFMT_D16_LOCKABLE, D3DERR_INVALIDCALL);
++    TEST_FMT(D3DFMT_D32_LOCKABLE, D3DERR_INVALIDCALL);
++    TEST_FMT(D3DFMT_S8_LOCKABLE, D3DERR_INVALIDCALL);
+     TEST_FMT(D3DFMT_D32, D3DERR_INVALIDCALL);
+     TEST_FMT(D3DFMT_D15S1, D3DERR_INVALIDCALL);
+     TEST_FMT(D3DFMT_D24S8, D3DERR_INVALIDCALL);
+diff --git a/dlls/wined3d/directx.c b/dlls/wined3d/directx.c
+index 01048fd..22d140d 100644
+--- a/dlls/wined3d/directx.c
++++ b/dlls/wined3d/directx.c
+@@ -4139,7 +4139,8 @@ static BOOL wined3d_check_pixel_format_depth(const struct wined3d_gl_info *gl_in
+     /* Float formats need FBOs. If FBOs are used this function isn't called */
+     if (format->flags & WINED3DFMT_FLAG_FLOAT) return FALSE;
+ 
+-    if ((format->id == WINED3DFMT_D16_LOCKABLE) || (format->id == WINED3DFMT_D32_FLOAT))
++    if ((format->id == WINED3DFMT_D16_LOCKABLE) || (format->id == WINED3DFMT_D32_FLOAT) ||
++        (format->id == WINED3DFMT_D32_LOCKABLE) || (format->id == WINED3DFMT_S8_LOCKABLE))
+         lockable = TRUE;
+ 
+     /* On some modern cards like the Geforce8/9 GLX doesn't offer some dephthstencil formats which D3D9 reports.
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 2f21b29..46e475b 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -2374,6 +2374,8 @@ const char *debug_d3dformat(enum wined3d_format_id format_id)
+         FMT_TO_STR(WINED3DFMT_G8R8_G8B8);
+         FMT_TO_STR(WINED3DFMT_R8G8_B8G8);
+         FMT_TO_STR(WINED3DFMT_D16_LOCKABLE);
++        FMT_TO_STR(WINED3DFMT_D32_LOCKABLE);
++        FMT_TO_STR(WINED3DFMT_S8_LOCKABLE);
+         FMT_TO_STR(WINED3DFMT_D32_UNORM);
+         FMT_TO_STR(WINED3DFMT_S1_UINT_D15_UNORM);
+         FMT_TO_STR(WINED3DFMT_X8D24_UNORM);
+diff --git a/include/d3d9types.h b/include/d3d9types.h
+index 3afcf89..57c1374 100644
+--- a/include/d3d9types.h
++++ b/include/d3d9types.h
+@@ -814,23 +814,36 @@ typedef enum _D3DFORMAT {
+     D3DFMT_L16                  =  81,
+     D3DFMT_D32F_LOCKABLE        =  82,
+     D3DFMT_D24FS8               =  83,
++    /* d3d9ex formats */
++    /* Z-Stencil formats valid for CPU access */  
++    D3DFMT_D32_LOCKABLE         =  84,
++    D3DFMT_S8_LOCKABLE          =  85,
++
+ 
+     D3DFMT_VERTEXDATA           = 100,
+     D3DFMT_INDEX16              = 101,
+     D3DFMT_INDEX32              = 102,
+     D3DFMT_Q16W16V16U16         = 110,
+     /* Floating point formats */
++    /* s10e5 formats (16-bits per channel) */
+     D3DFMT_R16F                 = 111,
+     D3DFMT_G16R16F              = 112,
+     D3DFMT_A16B16G16R16F        = 113,
+     
+     /* IEEE formats */
++    /* IEEE s23e8 formats (32-bits per channel) */
+     D3DFMT_R32F                 = 114,
+     D3DFMT_G32R32F              = 115,
+     D3DFMT_A32B32G32R32F        = 116,
+     
+     D3DFMT_CxV8U8               = 117,
+-
++    /* d3d9ex formats */
++    /* Monochrome 1 bit per pixel format */
++    D3DFMT_A1                   = 118,
++    /* 2.8 biased fixed point */
++    D3DFMT_A2B10G10R10_XR_BIAS  = 119,
++    /* Binary format indicating that the data has no inherent type */
++    D3DFMT_BINARYBUFFER         = 199,
+ 
+     D3DFMT_FORCE_DWORD          = 0xFFFFFFFF
+ } D3DFORMAT;
+diff --git a/include/wine/wined3d.h b/include/wine/wined3d.h
+index 8bc4c25..996e20d 100644
+--- a/include/wine/wined3d.h
++++ b/include/wine/wined3d.h
+@@ -135,7 +135,9 @@ enum wined3d_format_id
+     WINED3DFMT_R8G8_SNORM_L8X8_UNORM,
+     WINED3DFMT_R10G11B11_SNORM,
+     WINED3DFMT_R10G10B10_SNORM_A2_UNORM,
++    WINED3DFMT_D32_LOCKABLE,
+     WINED3DFMT_D16_LOCKABLE,
++    WINED3DFMT_S8_LOCKABLE,
+     WINED3DFMT_D32_UNORM,
+     WINED3DFMT_S1_UINT_D15_UNORM,
+     WINED3DFMT_X8D24_UNORM,

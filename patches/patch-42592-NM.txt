@@ -1,0 +1,14 @@
+diff --git a/dlls/wined3d/buffer.c b/dlls/wined3d/buffer.c
+index c584147..9f7144f 100644
+--- a/dlls/wined3d/buffer.c
++++ b/dlls/wined3d/buffer.c
+@@ -1466,7 +1466,8 @@ HRESULT CDECL wined3d_buffer_create(struct wined3d_device *device, const struct
+     FIXME("Ignoring access flags (pool).\n");
+ 
+     if (FAILED(hr = buffer_init(object, device, desc->byte_width, desc->usage, WINED3DFMT_UNKNOWN,
+-            WINED3D_POOL_MANAGED, desc->bind_flags, data, parent, parent_ops)))
++            desc->byte_width > 1024 * 1024 ? WINED3D_POOL_DEFAULT : WINED3D_POOL_MANAGED,
++            desc->bind_flags, data, parent, parent_ops)))
+     {
+         WARN("Failed to initialize buffer, hr %#x.\n", hr);
+         HeapFree(GetProcessHeap(), 0, object);

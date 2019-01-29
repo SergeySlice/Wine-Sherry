@@ -1,0 +1,23 @@
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index 93863d0..11a4258 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -7417,18 +7417,7 @@ static void shader_glsl_free_context_data(struct wined3d_context *context)
+ static void shader_glsl_get_caps(const struct wined3d_gl_info *gl_info, struct shader_caps *caps)
+ {
+     UINT shader_model;
+-
+-    if (gl_info->supported[EXT_GPU_SHADER4] && gl_info->supported[ARB_SHADER_BIT_ENCODING]
+-            && gl_info->supported[ARB_GEOMETRY_SHADER4] && gl_info->glsl_version >= MAKEDWORD_VERSION(1, 50)
+-            && gl_info->supported[ARB_DRAW_ELEMENTS_BASE_VERTEX] && gl_info->supported[ARB_DRAW_INSTANCED]
+-            && gl_info->supported[ARB_TEXTURE_RG] && gl_info->supported[ARB_SAMPLER_OBJECTS])
+         shader_model = 4;
+-    /* ARB_shader_texture_lod or EXT_gpu_shader4 is required for the SM3
+-     * texldd and texldl instructions. */
+-    else if (gl_info->supported[ARB_SHADER_TEXTURE_LOD] || gl_info->supported[EXT_GPU_SHADER4])
+-        shader_model = 3;
+-    else
+-        shader_model = 2;
+     TRACE("Shader model %u.\n", shader_model);
+ 
+     caps->vs_version = min(wined3d_settings.max_sm_vs, shader_model);

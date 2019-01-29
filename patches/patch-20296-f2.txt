@@ -1,0 +1,414 @@
+commit ec66a66797de176552951e142c5ab9410a86c49c
+Author: Sergey Isakov <sergey.slice@gmail.com>
+Date:   Tue Nov 24 21:15:23 2015 +0300
+
+    add surrogates by Amos Wenger
+
+diff --git a/dlls/ole32/surrogate.c b/dlls/ole32/surrogate.c
+new file mode 100644
+index 0000000..69d2bf3
+--- /dev/null
++++ b/dlls/ole32/surrogate.c
+@@ -0,0 +1,368 @@
++/*
++ * System surrogate implementation
++ *
++ * Copyright 2011  Amos Wenger
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include <assert.h>
++#include <stdarg.h>
++#include <string.h>
++
++#define COBJMACROS
++#define NONAMELESSUNION
++#define NONAMELESSSTRUCT
++
++#include "windef.h"
++#include "winbase.h"
++#include "winerror.h"
++#include "winnls.h"
++#include "wine/unicode.h"
++#include "wine/debug.h"
++#include "objbase.h"
++
++#include "compobj_private.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(ole);
++
++/* surrogate data structure */
++typedef struct CSurrogate {
++
++    const ISurrogateVtbl* lpVtbl;  /* VTable relative to the ISurrogate interface.*/
++    
++    LONG ref; /* reference counter for this object */
++
++} CSurrogate;
++
++/* Local function used by csurrogate implementation */
++static HRESULT CSurrogate_Construct(CSurrogate* iface);
++static HRESULT CSurrogate_Destroy(CSurrogate* iface);
++
++/*******************************************************************************
++ *        CSurrogate_QueryInterface
++ */
++static HRESULT WINAPI
++CSurrogate_QueryInterface(ISurrogate* iface,REFIID riid,void** ppvObject)
++{
++    CSurrogate *This = (CSurrogate *)iface;
++
++    TRACE("(%p,%s,%p)\n",This,debugstr_guid(riid),ppvObject);
++
++    /* Perform a sanity check on the parameters.*/
++    if (ppvObject == 0) {
++        TRACE("null ppobject, invalid arg!");
++        return E_INVALIDARG;
++    }
++
++    /* Initialize the return parameter */
++    *ppvObject = 0;
++
++    /* Compare the riid with the interface IDs implemented by this object.*/
++    if (IsEqualIID(&IID_IUnknown,      riid)    ||
++        IsEqualIID(&IID_ISurrogate,    riid))
++        *ppvObject = iface;
++        
++    if(IsEqualIID(&IID_IUnknown, riid)) {
++        TRACE("Required IID IUnknown\n");
++    } else if(IsEqualIID(&IID_ISurrogate, riid)) {
++        TRACE("Required IID IUnknown\n");
++    } else if(IsEqualIID(&IID_IClassFactory, riid)) {
++        TRACE("Required IID IClassFactory\n");
++    } else {
++        TRACE("Unknown required IID %s\n", debugstr_guid(riid));
++    }
++
++    /* Check that we obtained an interface.*/
++    if ((*ppvObject)==0)
++        return E_NOINTERFACE;
++
++    /* Query Interface always increases the reference count by one when it is successful */
++    ISurrogate_AddRef(iface);
++
++    return S_OK;
++}
++
++/******************************************************************************
++ *        CSurrogate_AddRef
++ */
++static ULONG WINAPI
++CSurrogate_AddRef(ISurrogate* iface)
++{
++    CSurrogate *This = (CSurrogate *)iface;
++
++    TRACE("(%p)\n",iface);
++
++    return InterlockedIncrement(&This->ref);
++}
++
++/******************************************************************************
++ *        CSurrogate_Release
++ */
++static ULONG WINAPI
++CSurrogate_Release(ISurrogate* iface)
++{
++    CSurrogate *This = (CSurrogate *)iface;
++    ULONG ref;
++
++    TRACE("(%p)\n",iface);
++
++    ref = InterlockedDecrement(&This->ref);
++
++    /* destroy the object if there's no more reference on it */
++    if (ref == 0) CSurrogate_Destroy(This);
++
++    return ref;
++}
++
++/******************************************************************************
++ *        CSurrogate_LoadDllServer
++ */
++typedef HRESULT (WINAPI *DllRegisterServer_func)(void);
++typedef HRESULT (WINAPI *DllGetClassObject_func)(REFCLSID, REFIID, LPVOID);
++ 
++static HRESULT WINAPI
++CSurrogate_LoadDllServer(ISurrogate* iface, REFCLSID rclsid)
++{
++    static const WCHAR wszInprocServer32[] = {'I','n','p','r','o','c','S','e','r','v','e','r','3','2',0};
++    LPWSTR dllServer;
++    DWORD size;
++    HKEY hkey;
++    DWORD type;
++    
++    HRESULT hres;
++    HANDLE hDLL;
++    DllRegisterServer_func pDllRegisterServer;
++    DllGetClassObject_func pDllGetClassObject;
++    IUnknown *unk;
++    DWORD cookie;
++
++    CSurrogate *This = (CSurrogate *) iface;
++    
++    TRACE("(%p, %s): stub (rclsid = %p)\n", This, debugstr_guid(rclsid), rclsid);
++    
++    /* retrieve dll path */
++    hres = COM_OpenKeyForCLSID(rclsid, wszInprocServer32, KEY_READ, &hkey);
++    if (FAILED(hres)) {
++        WARN("Failed getting %s key for clsid %s, with reason 0x%08x\n",
++            debugstr_w(wszInprocServer32), debugstr_guid(rclsid), hres);
++        return hres;
++    }
++        
++    hres = RegQueryValueExW(hkey, NULL, NULL, &type, NULL, &size);
++    if (FAILED(hres)) {
++        WARN("Failed getting default entry in InprocServer32 key, with reason 0x%08x\n", hres);
++        return hres;
++    }
++        
++    dllServer = HeapAlloc(GetProcessHeap(), 0, size);
++    RegQueryValueExW(hkey, NULL, NULL, &type, (LPBYTE) dllServer, &size);
++    
++    TRACE("Loading dll server %s for clsid %s", debugstr_w(dllServer), debugstr_guid(rclsid));
++    
++    hDLL = LoadLibraryW(dllServer);
++    HeapFree(GetProcessHeap(), 0, dllServer);
++    
++    if (!hDLL)
++        return E_FAIL;
++
++    pDllRegisterServer = (DllRegisterServer_func)GetProcAddress(hDLL, "DllRegisterServer");
++    if (pDllRegisterServer)
++    {
++        hres = pDllRegisterServer();
++        if (FAILED(hres)) {
++            ERR("Failed to register Dll server. Error was 0x%x)\n", hres);
++        } else {
++            TRACE("Successfully registered dll server with rclsid %s!\n", debugstr_guid(rclsid));
++        }
++    } else {
++        ERR("Symbol DllRegisterServer not found!\n");
++        hres = E_FAIL;
++    }
++    
++    pDllGetClassObject = (DllGetClassObject_func)GetProcAddress(hDLL, "DllGetClassObject");
++    if (pDllGetClassObject)
++    {
++        hres = pDllGetClassObject(rclsid, &IID_IUnknown, &unk);
++        if (FAILED(hres)) {
++            ERR("Failed to get class object from dll. Error was 0x%x)\n", hres);
++        } else {
++            TRACE("Successfully got class object, address = %p\n", unk);
++            /* FIXME: I have no frickin idea what REGCLS value I should use here! */
++            hres = CoRegisterClassObject(rclsid, unk, CLSCTX_LOCAL_SERVER, REGCLS_MULTIPLEUSE, &cookie);
++            if (FAILED(hres)) {
++                ERR("Failed to register class object %s\n", debugstr_guid(rclsid));
++            }
++        }
++    } else {
++        ERR("Symbol DllGetClassObject not found!\n");
++        hres = E_FAIL;
++    }
++    
++    return hres;
++}
++
++/******************************************************************************
++ *        CSurrogate_FreeSurrogate
++ */
++static HRESULT WINAPI
++CSurrogate_FreeSurrogate(ISurrogate* iface)
++{
++    CSurrogate *This = (CSurrogate *) iface;
++    
++    FIXME("(%p): stub\n",This);
++    
++    return S_OK;
++}
++
++/******************************************************************************
++ *        CreateSystemSurrogate (OLE32.@)
++ ******************************************************************************/
++HRESULT WINAPI CreateSystemSurrogate(LPSURROGATE * ppsur)
++{
++    CSurrogate* newSurrogate;
++    HRESULT  hr;
++
++    TRACE("(%p)\n",ppsur);
++
++    if (!ppsur)
++        return E_POINTER;
++
++    *ppsur=NULL;
++
++    newSurrogate = HeapAlloc(GetProcessHeap(), 0, sizeof(CSurrogate));
++    if (!newSurrogate)
++        return E_OUTOFMEMORY;
++
++    hr = CSurrogate_Construct(newSurrogate);
++    
++    /* the FileMoniker impl, on which I based mine, does this using QueryInterface
++     * Should I do it this way too? I think the vtable already corresponds fully
++     * to ISurrogate anyway.
++     */
++    *ppsur = (LPSURROGATE) newSurrogate;
++
++    return hr;
++}
++
++/*
++ * Virtual function table for the CSurrogate class which include ISurrogate functions.
++ */
++static const ISurrogateVtbl VT_CSurrogate =
++{
++    /*** IUnknown methods ***/
++    CSurrogate_QueryInterface,
++    CSurrogate_AddRef,
++    CSurrogate_Release,
++    
++    /*** ISurrogate methods ***/
++    CSurrogate_LoadDllServer,
++    CSurrogate_FreeSurrogate,
++};
++
++/******************************************************************************
++ *         CSurrogate_Construct (local function)
++ */
++static HRESULT CSurrogate_Construct(CSurrogate* This)
++{
++    TRACE("(%p)\n",This);
++
++    /* Initialize the virtual function table. */
++    This->lpVtbl       = &VT_CSurrogate;
++    This->ref          = 0;
++
++    return S_OK;
++}
++
++/******************************************************************************
++ *         CSurrogate_Destroy (local function)
++ */
++static HRESULT CSurrogate_Destroy(CSurrogate* This)
++{
++    FIXME("(%p): stub\n",This);
++
++    return S_OK;
++}
++
++/* IClassFactory implementation for the surrogate */
++
++static HRESULT WINAPI SurrogateCF_QueryInterface(LPCLASSFACTORY iface,
++    REFIID riid, LPVOID *ppv)
++{
++    *ppv = NULL;
++    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IClassFactory))
++    {
++        *ppv = iface;
++        IUnknown_AddRef(iface);
++        return S_OK;
++    }
++    return E_NOINTERFACE;
++}
++
++static ULONG WINAPI SurrogateCF_AddRef(LPCLASSFACTORY iface)
++{
++    return 2; /* non-heap based object */
++}
++
++static ULONG WINAPI SurrogateCF_Release(LPCLASSFACTORY iface)
++{
++    return 1; /* non-heap based object */
++}
++
++static HRESULT WINAPI SurrogateCF_CreateInstance(LPCLASSFACTORY iface,
++    LPUNKNOWN pUnk, REFIID riid, LPVOID *ppv)
++{
++    HRESULT hr;
++    ISurrogate *pCSurrogate;
++
++    TRACE("(%p, %s, %p)\n", pUnk, debugstr_guid(riid), ppv);
++
++    *ppv = NULL;
++
++    if (pUnk)
++        return CLASS_E_NOAGGREGATION;
++
++    hr = CreateSystemSurrogate(&pCSurrogate);
++    if (FAILED(hr))
++        return hr;
++
++    hr = ISurrogate_QueryInterface(pCSurrogate, riid, ppv);
++    ISurrogate_Release(pCSurrogate);
++
++    return hr;
++}
++
++static HRESULT WINAPI SurrogateCF_LockServer(LPCLASSFACTORY iface, BOOL fLock)
++{
++    FIXME("(%d)\n",fLock);
++    return S_OK;
++}
++
++static const IClassFactoryVtbl SurrogateCFVtbl =
++{
++    SurrogateCF_QueryInterface,
++    SurrogateCF_AddRef,
++    SurrogateCF_Release,
++    SurrogateCF_CreateInstance,
++    SurrogateCF_LockServer
++};
++static const IClassFactoryVtbl *SurrogateCF = &SurrogateCFVtbl;
++
++HRESULT SurrogateCF_Create(REFIID riid, LPVOID *ppv)
++{
++    TRACE("(%s, %p)\n", debugstr_guid(riid), ppv);
++    return IClassFactory_QueryInterface((IClassFactory *)&SurrogateCF, riid, ppv);
++}
++
+diff --git a/dlls/ole32/surrogate.h b/dlls/ole32/surrogate.h
+new file mode 100644
+index 0000000..c01c681
+--- /dev/null
++++ b/dlls/ole32/surrogate.h
+@@ -0,0 +1,28 @@
++/*
++ * Surrogate
++ *
++ * Copyright 2011 Amos Wenger
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#ifndef __WINE_SURROGATE_H__
++#define __WINE_SURROGATE_H__
++
++DEFINE_OLEGUID( CLSID_Surrogate,        0x330, 0, 0 );
++
++HRESULT SurrogateCF_Create(REFIID riid, LPVOID *ppv);
++
++#endif /* __WINE_SURROGATE_H__ */

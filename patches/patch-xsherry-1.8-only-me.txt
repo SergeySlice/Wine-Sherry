@@ -1,0 +1,2566 @@
+commit 12e8271003cf8cd4e9b50293c96bb4154f2b878c
+Author: Sergey Isakov <sergey.slice@gmail.com>
+Date:   Tue Nov 24 00:49:10 2015 +0300
+
+    add files for dxtn support
+
+diff --git a/dlls/d3d9/surface.c b/dlls/d3d9/surface.c
+index 833c1f4..47615d5 100644
+--- a/dlls/d3d9/surface.c
++++ b/dlls/d3d9/surface.c
+@@ -18,7 +18,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ #include "d3d9_private.h"
+ 
+@@ -361,7 +361,7 @@ void surface_init(struct d3d9_surface *surface, struct wined3d_texture *wined3d_
+         struct wined3d_surface *wined3d_surface, const struct wined3d_parent_ops **parent_ops)
+ {
+     struct wined3d_resource_desc desc;
+-    IDirect3DBaseTexture9 *texture;
++    IDirect3DBaseTexture9 *texture = NULL;
+ 
+     surface->IDirect3DSurface9_iface.lpVtbl = &d3d9_surface_vtbl;
+     d3d9_resource_init(&surface->resource);
+@@ -403,6 +403,10 @@ static void STDMETHODCALLTYPE view_wined3d_object_destroyed(void *parent)
+ {
+     struct d3d9_surface *surface = parent;
+ 
++  if (!surface) {
++    return;
++  }
++
+     /* If the surface reference count drops to zero, we release our reference
+      * to the view, but don't clear the pointer yet, in case e.g. a
+      * GetRenderTarget() call brings the surface back before the view is
+@@ -425,6 +429,10 @@ struct wined3d_rendertarget_view *d3d9_surface_get_rendertarget_view(struct d3d9
+ {
+     HRESULT hr;
+ 
++  if (!surface) {
++    return NULL;
++  }
++
+     if (surface->wined3d_rtv)
+         return surface->wined3d_rtv;
+ 
+diff --git a/dlls/d3dx9_36/core.c b/dlls/d3dx9_36/core.c
+index 53e9531..f1ae58f 100644
+--- a/dlls/d3dx9_36/core.c
++++ b/dlls/d3dx9_36/core.c
+@@ -66,7 +66,7 @@ static ULONG WINAPI ID3DXBufferImpl_AddRef(ID3DXBuffer *iface)
+     struct ID3DXBufferImpl *This = impl_from_ID3DXBuffer(iface);
+     ULONG ref = InterlockedIncrement(&This->ref);
+ 
+-    TRACE("%p increasing refcount to %u\n", This, ref);
++//    TRACE("%p increasing refcount to %u\n", This, ref);
+ 
+     return ref;
+ }
+@@ -76,7 +76,7 @@ static ULONG WINAPI ID3DXBufferImpl_Release(ID3DXBuffer *iface)
+     struct ID3DXBufferImpl *This = impl_from_ID3DXBuffer(iface);
+     ULONG ref = InterlockedDecrement(&This->ref);
+ 
+-    TRACE("%p decreasing refcount to %u\n", This, ref);
++//    TRACE("%p decreasing refcount to %u\n", This, ref);
+ 
+     if (ref == 0)
+     {
+diff --git a/dlls/d3dx9_36/line.c b/dlls/d3dx9_36/line.c
+index 5de44f4..2bdbe79 100644
+--- a/dlls/d3dx9_36/line.c
++++ b/dlls/d3dx9_36/line.c
+@@ -59,7 +59,7 @@ static ULONG WINAPI d3dx9_line_AddRef(ID3DXLine *iface)
+     struct d3dx9_line *line = impl_from_ID3DXLine(iface);
+     ULONG refcount = InterlockedIncrement(&line->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", line, refcount);
++//    TRACE("%p increasing refcount to %u.\n", line, refcount);
+ 
+     return refcount;
+ }
+@@ -69,7 +69,7 @@ static ULONG WINAPI d3dx9_line_Release(ID3DXLine *iface)
+     struct d3dx9_line *line = impl_from_ID3DXLine(iface);
+     ULONG refcount = InterlockedDecrement(&line->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", line, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", line, refcount);
+ 
+     if (!refcount)
+     {
+diff --git a/dlls/d3dx9_36/mesh.c b/dlls/d3dx9_36/mesh.c
+index 606a088..0d4c34f 100644
+--- a/dlls/d3dx9_36/mesh.c
++++ b/dlls/d3dx9_36/mesh.c
+@@ -118,7 +118,7 @@ static ULONG WINAPI d3dx9_mesh_AddRef(ID3DXMesh *iface)
+     struct d3dx9_mesh *mesh = impl_from_ID3DXMesh(iface);
+     ULONG refcount = InterlockedIncrement(&mesh->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", mesh, refcount);
++//    TRACE("%p increasing refcount to %u.\n", mesh, refcount);
+ 
+     return refcount;
+ }
+@@ -128,7 +128,7 @@ static ULONG WINAPI d3dx9_mesh_Release(ID3DXMesh *iface)
+     struct d3dx9_mesh *mesh = impl_from_ID3DXMesh(iface);
+     ULONG refcount = InterlockedDecrement(&mesh->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", mesh, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", mesh, refcount);
+ 
+     if (!refcount)
+     {
+@@ -5186,6 +5195,9 @@ HRESULT WINAPI D3DXCreateTextA(struct IDirect3DDevice9 *device, HDC hdc, const c
+ 
+     len = MultiByteToWideChar(CP_ACP, 0, text, -1, NULL, 0);
+     textW = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
++  if (!textW) {
++    return E_OUTOFMEMORY;
++  }
+     MultiByteToWideChar(CP_ACP, 0, text, -1, textW, len);
+ 
+     hr = D3DXCreateTextW(device, hdc, textW, deviation, extrusion,
+diff --git a/dlls/d3dx9_36/render.c b/dlls/d3dx9_36/render.c
+index cca6b44..0bf52b9 100644
+--- a/dlls/d3dx9_36/render.c
++++ b/dlls/d3dx9_36/render.c
+@@ -151,7 +151,7 @@ static ULONG WINAPI D3DXRenderToSurface_AddRef(ID3DXRenderToSurface *iface)
+     struct render_to_surface *render = impl_from_ID3DXRenderToSurface(iface);
+     ULONG ref = InterlockedIncrement(&render->ref);
+ 
+-    TRACE("%p increasing refcount to %u\n", iface, ref);
++//    TRACE("%p increasing refcount to %u\n", iface, ref);
+ 
+     return ref;
+ }
+@@ -161,7 +161,7 @@ static ULONG WINAPI D3DXRenderToSurface_Release(ID3DXRenderToSurface *iface)
+     struct render_to_surface *render = impl_from_ID3DXRenderToSurface(iface);
+     ULONG ref = InterlockedDecrement(&render->ref);
+ 
+-    TRACE("%p decreasing refcount to %u\n", iface, ref);
++//    TRACE("%p decreasing refcount to %u\n", iface, ref);
+ 
+     if (!ref)
+     {
+@@ -488,7 +488,7 @@ static ULONG WINAPI D3DXRenderToEnvMap_AddRef(ID3DXRenderToEnvMap *iface)
+     struct render_to_envmap *render = impl_from_ID3DXRenderToEnvMap(iface);
+     ULONG ref = InterlockedIncrement(&render->ref);
+ 
+-    TRACE("%p increasing refcount to %u\n", iface, ref);
++//    TRACE("%p increasing refcount to %u\n", iface, ref);
+ 
+     return ref;
+ }
+@@ -498,7 +498,7 @@ static ULONG WINAPI D3DXRenderToEnvMap_Release(ID3DXRenderToEnvMap *iface)
+     struct render_to_envmap *render = impl_from_ID3DXRenderToEnvMap(iface);
+     ULONG ref = InterlockedDecrement(&render->ref);
+ 
+-    TRACE("%p decreasing refcount to %u\n", iface, ref);
++//    TRACE("%p decreasing refcount to %u\n", iface, ref);
+ 
+     if (!ref)
+     {
+diff --git a/dlls/d3dx9_36/skin.c b/dlls/d3dx9_36/skin.c
+index 9b93af6..3364ac3 100644
+--- a/dlls/d3dx9_36/skin.c
++++ b/dlls/d3dx9_36/skin.c
+@@ -70,7 +71,7 @@ static ULONG WINAPI d3dx9_skin_info_AddRef(ID3DXSkinInfo *iface)
+     struct d3dx9_skin_info *skin = impl_from_ID3DXSkinInfo(iface);
+     ULONG refcount = InterlockedIncrement(&skin->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", skin, refcount);
++//    TRACE("%p increasing refcount to %u.\n", skin, refcount);
+ 
+     return refcount;
+ }
+@@ -80,7 +81,7 @@ static ULONG WINAPI d3dx9_skin_info_Release(ID3DXSkinInfo *iface)
+     struct d3dx9_skin_info *skin = impl_from_ID3DXSkinInfo(iface);
+     ULONG refcount = InterlockedDecrement(&skin->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", skin, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", skin, refcount);
+ 
+     if (!refcount)
+     {
+diff --git a/dlls/d3dx9_36/sprite.c b/dlls/d3dx9_36/sprite.c
+index 8fbabc3..4878ec9 100644
+--- a/dlls/d3dx9_36/sprite.c
++++ b/dlls/d3dx9_36/sprite.c
+@@ -94,7 +94,7 @@ static ULONG WINAPI d3dx9_sprite_AddRef(ID3DXSprite *iface)
+     struct d3dx9_sprite *sprite = impl_from_ID3DXSprite(iface);
+     ULONG refcount = InterlockedIncrement(&sprite->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", sprite, refcount);
++//    TRACE("%p increasing refcount to %u.\n", sprite, refcount);
+ 
+     return refcount;
+ }
+@@ -104,7 +104,7 @@ static ULONG WINAPI d3dx9_sprite_Release(ID3DXSprite *iface)
+     struct d3dx9_sprite *sprite = impl_from_ID3DXSprite(iface);
+     ULONG refcount = InterlockedDecrement(&sprite->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", sprite, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", sprite, refcount);
+ 
+     if (!refcount)
+     {
+diff --git a/dlls/d3dx9_36/surface.c b/dlls/d3dx9_36/surface.c
+index b8bb710..ecb4d9a 100644
+--- a/dlls/d3dx9_36/surface.c
++++ b/dlls/d3dx9_36/surface.c
+@@ -88,6 +92,7 @@ static const GUID *d3dformat_to_wic_guid(D3DFORMAT format)
+ #define DDS_CAPS_COMPLEX 0x8
+ #define DDS_CAPS_TEXTURE 0x1000
+ #define DDS_CAPS_MIPMAP 0x400000
++#define DDS_SURFACE_FLAGS_CUBEMAP 0x00000008 // DDS_CAPS_COMPLEX
+ 
+ /* dds_header.caps2 */
+ #define DDS_CAPS2_CUBEMAP 0x200
+@@ -125,22 +130,47 @@ struct dds_pixel_format
+ 
+ struct dds_header
+ {
+-    DWORD signature;
+-    DWORD size;
+-    DWORD flags;
+-    DWORD height;
+-    DWORD width;
+-    DWORD pitch_or_linear_size;
+-    DWORD depth;
+-    DWORD miplevels;
++    DWORD signature;  //44 44 53 20  = "DDS "
++    DWORD size;       //7C 00 00 00  = 124
++    DWORD flags;      //07 10 08 00 = 00081007 = DDS_CAPS | DDS_HEIGHT | DDS_WIDTH | DDS_PIXELFORMAT | DDS_LINEARSIZE
++    DWORD height;     //00 01 00 00  = 256
++    DWORD width;      //00 01 00 00 
++    DWORD pitch_or_linear_size; //00 04 00 00 = 1024
++    DWORD depth;      //00 00 00 00
++    DWORD miplevels;  //00 00 00 00 
+     DWORD reserved[11];
+-    struct dds_pixel_format pixel_format;
+-    DWORD caps;
+-    DWORD caps2;
++    struct dds_pixel_format pixel_format; //SIZE=32 FLAGS=DDS_PF_FOURCC 'DXT5' 
++    DWORD caps; //dwSurfaceFlags  //00 10 00 00 = DDS_CAPS_TEXTURE
++    DWORD caps2; //dwCubemapFlags = 0
+     DWORD caps3;
+     DWORD caps4;
+     DWORD reserved2;
+ };
++/*
++Volume DDS DX5 miplevels
++ 44 44 53 20 = DDS
++ 7C 00 00 00 = 124
++ 07 10 82 00 = 821007 = DDS_DEPTH | DDS_MIPMAPCOUNT | DDS_CAPS | DDS_HEIGHT | DDS_WIDTH | DDS_PIXELFORMAT
++ 00 01 00 00 = 256
++ 00 01 00 00 = 256
++ 00 00 00 00 = pitch = 0
++ 08 00 00 00 = depth = 8
++ 09 00 00 00 = miplevels = 9
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++00 00 00 00 00 00 00 00 00 00 00 00 
++ Pixel_format
++ 20 00 00 00 size  = 32
++ 04 00 00 00 flags = DDS_PF_FOURCC
++ 44 58 54 35 DXT5
++ 00 00 00 00 bpp = 0
++ 00 00 00 00 r,g,b mask = 0
++ 00 00 00 00 00 00 00 00 00 00 00 00 
++ 
++ 08 10 40 00 caps = 401008 = DDS_CAPS_COMPLEX | DDS_CAPS_TEXTURE | DDS_CAPS_MIPMAP
++ 00 00 20 00 caps2 = DDS_CAPS2_VOLUME
++ 00 00 00 00 00 00 00 00 00 00 00 00
++ */
+ 
+ static D3DFORMAT dds_fourcc_to_d3dformat(DWORD fourcc)
+ {
+@@ -1397,7 +1624,8 @@ static void get_relevant_argb_components(const struct argb_conversion_info *info
+  * Recombines the output of get_relevant_argb_components and converts
+  * it to the destination format.
+  */
+-static DWORD make_argb_color(const struct argb_conversion_info *info, const DWORD *in)
++//Slice - there must be dithering
++static DWORD make_argb_color(const struct argb_conversion_info *info, const DWORD *in, BOOL dither)
+ {
+     UINT i;
+     DWORD val = 0;
+@@ -1526,11 +1767,12 @@ void copy_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slice_pitch,
+  * any necessary format conversion and color keying.
+  * Pixels outsize the source rect are blacked out.
+  * Works only for ARGB formats with 1 - 4 bytes per pixel.
++ * Slice - there must be dithering while converting from 16 bit to 32 bit
+  */
+ void convert_argb_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slice_pitch, const struct volume *src_size,
+         const struct pixel_format_desc *src_format, BYTE *dst, UINT dst_row_pitch, UINT dst_slice_pitch,
+         const struct volume *dst_size, const struct pixel_format_desc *dst_format, D3DCOLOR color_key,
+-        const PALETTEENTRY *palette)
++        const PALETTEENTRY *palette, BOOL dither)
+ {
+     struct argb_conversion_info conv_info, ck_conv_info;
+     const struct pixel_format_desc *ck_format = NULL;
+@@ -1567,14 +1809,14 @@ void convert_argb_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slice_pit
+                     DWORD val;
+ 
+                     get_relevant_argb_components(&conv_info, src_ptr, channels);
+-                    val = make_argb_color(&conv_info, channels);
++                    val = make_argb_color(&conv_info, channels, dither);
+ 
+                     if (color_key)
+                     {
+                         DWORD ck_pixel;
+ 
+                         get_relevant_argb_components(&ck_conv_info, src_ptr, channels);
+-                        ck_pixel = make_argb_color(&ck_conv_info, channels);
++                        ck_pixel = make_argb_color(&ck_conv_info, channels, dither);
+                         if (ck_pixel == color_key)
+                             val &= ~conv_info.destmask[0];
+                     }
+@@ -1629,27 +1871,29 @@ void convert_argb_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slice_pit
+  * any necessary format conversion, color keying and stretching
+  * using a point filter.
+  * Works only for ARGB formats with 1 - 4 bytes per pixel.
++ *
+  */
++//Slice - speed up the filter taking into account that there is only D3DFMT_A8R8G8B8
+ void point_filter_argb_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slice_pitch, const struct volume *src_size,
+         const struct pixel_format_desc *src_format, BYTE *dst, UINT dst_row_pitch, UINT dst_slice_pitch,
+         const struct volume *dst_size, const struct pixel_format_desc *dst_format, D3DCOLOR color_key,
+         const PALETTEENTRY *palette)
+ {
+-    struct argb_conversion_info conv_info, ck_conv_info;
++/*    struct argb_conversion_info conv_info, ck_conv_info;
+     const struct pixel_format_desc *ck_format = NULL;
+-    DWORD channels[4];
++    DWORD channels[4]; */
+     UINT x, y, z;
+ 
+-    ZeroMemory(channels, sizeof(channels));
++/*    ZeroMemory(channels, sizeof(channels));
+     init_argb_conversion_info(src_format, dst_format, &conv_info);
+ 
+     if (color_key)
+-    {
++    { */
+         /* Color keys are always represented in D3DFMT_A8R8G8B8 format. */
+-        ck_format = get_format_info(D3DFMT_A8R8G8B8);
++/*        ck_format = get_format_info(D3DFMT_A8R8G8B8);
+         init_argb_conversion_info(src_format, ck_format, &ck_conv_info);
+     }
+-
++*/
+     for (z = 0; z < dst_size->depth; z++)
+     {
+         BYTE *dst_slice_ptr = dst + z * dst_slice_pitch;
+@@ -1664,20 +1908,22 @@ void point_filter_argb_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slic
+             {
+                 const BYTE *src_ptr = src_row_ptr + (x * src_size->width / dst_size->width) * src_format->bytes_per_pixel;
+ 
+-                if (!src_format->to_rgba && !dst_format->from_rgba
++                //*((DWORD*)dst_ptr)++ = *(DWORD*)src_ptr;
++                memcpy(dst_ptr, src_ptr, dst_format->bytes_per_pixel);
++  /*              if (!src_format->to_rgba && !dst_format->from_rgba
+                         && src_format->bytes_per_pixel <= 4 && dst_format->bytes_per_pixel <= 4)
+                 {
+                     DWORD val;
+ 
+                     get_relevant_argb_components(&conv_info, src_ptr, channels);
+-                    val = make_argb_color(&conv_info, channels);
++                    val = make_argb_color(&conv_info, channels, dither);
+ 
+                     if (color_key)
+                     {
+                         DWORD ck_pixel;
+ 
+                         get_relevant_argb_components(&ck_conv_info, src_ptr, channels);
+-                        ck_pixel = make_argb_color(&ck_conv_info, channels);
++                        ck_pixel = make_argb_color(&ck_conv_info, channels, dither);
+                         if (ck_pixel == color_key)
+                             val &= ~conv_info.destmask[0];
+                     }
+@@ -1757,6 +2092,9 @@ HRESULT WINAPI D3DXLoadSurfaceFromMemory(IDirect3DSurface9 *dst_surface,
+     D3DSURFACE_DESC surfdesc;
+     D3DLOCKED_RECT lockrect;
+     struct volume src_size, dst_size;
++    HRESULT ret = D3D_OK;
++//    RECT tmp_rect;
++    const BYTE *src_addr;
+ 
+     TRACE("(%p, %p, %s, %p, %#x, %u, %p, %s, %#x, 0x%08x)\n",
+             dst_surface, dst_palette, wine_dbgstr_rect(dst_rect), src_memory, src_format,
+@@ -1787,6 +2125,10 @@ HRESULT WINAPI D3DXLoadSurfaceFromMemory(IDirect3DSurface9 *dst_surface,
+     {
+         dst_size.width = surfdesc.Width;
+         dst_size.height = surfdesc.Height;
++ /*       tmp_rect.left = 0;
++        tmp_rect.right = dst_size.width;
++        tmp_rect.top = 0;
++        tmp_rect.bottom = dst_size.height; */
+     }
+     else
+     {
+@@ -2136,7 +2569,7 @@ HRESULT WINAPI D3DXSaveSurfaceToFileInMemory(ID3DXBuffer **dst_buffer, D3DXIMAGE
+             if (SUCCEEDED(hr))
+             {
+                 convert_argb_pixels(locked_rect.pBits, locked_rect.Pitch, 0, &size, src_format_desc,
+-                    dst_data, dst_pitch, 0, &size, dst_format_desc, 0, NULL);
++                    dst_data, dst_pitch, 0, &size, dst_format_desc, 0, NULL, TRUE);
+                 IDirect3DSurface9_UnlockRect(src_surface);
+             }
+ 
+diff --git a/dlls/d3dx9_36/volume.c b/dlls/d3dx9_36/volume.c
+index fae8542..05a8686 100644
+--- a/dlls/d3dx9_36/volume.c
++++ b/dlls/d3dx9_36/volume.c
+diff --git a/dlls/d3dx9_36/xfile.c b/dlls/d3dx9_36/xfile.c
+index eda0d7e..0f037c1 100644
+--- a/dlls/d3dx9_36/xfile.c
++++ b/dlls/d3dx9_36/xfile.c
+@@ -110,7 +110,7 @@ static ULONG WINAPI d3dx9_file_data_AddRef(ID3DXFileData *iface)
+     struct d3dx9_file_data *file_data = impl_from_ID3DXFileData(iface);
+     ULONG refcount = InterlockedIncrement(&file_data->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", file_data, refcount);
++//    TRACE("%p increasing refcount to %u.\n", file_data, refcount);
+ 
+     return refcount;
+ }
+@@ -120,7 +120,7 @@ static ULONG WINAPI d3dx9_file_data_Release(ID3DXFileData *iface)
+     struct d3dx9_file_data *file_data = impl_from_ID3DXFileData(iface);
+     ULONG refcount = InterlockedDecrement(&file_data->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", file_data, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", file_data, refcount);
+ 
+     if (!refcount)
+     {
+@@ -412,7 +412,7 @@ static ULONG WINAPI d3dx9_file_enum_object_AddRef(ID3DXFileEnumObject *iface)
+     struct d3dx9_file_enum_object *file_enum = impl_from_ID3DXFileEnumObject(iface);
+     ULONG refcount = InterlockedIncrement(&file_enum->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", file_enum, refcount);
++//    TRACE("%p increasing refcount to %u.\n", file_enum, refcount);
+ 
+     return refcount;
+ }
+@@ -422,7 +422,7 @@ static ULONG WINAPI d3dx9_file_enum_object_Release(ID3DXFileEnumObject *iface)
+     struct d3dx9_file_enum_object *file_enum = impl_from_ID3DXFileEnumObject(iface);
+     ULONG refcount = InterlockedDecrement(&file_enum->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", file_enum, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", file_enum, refcount);
+ 
+     if (!refcount)
+     {
+@@ -527,7 +527,7 @@ static ULONG WINAPI d3dx9_file_AddRef(ID3DXFile *iface)
+     struct d3dx9_file *file = impl_from_ID3DXFile(iface);
+     ULONG refcount = InterlockedIncrement(&file->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", file, refcount);
++//    TRACE("%p increasing refcount to %u.\n", file, refcount);
+ 
+     return refcount;
+ }
+@@ -537,7 +537,7 @@ static ULONG WINAPI d3dx9_file_Release(ID3DXFile *iface)
+     struct d3dx9_file *file = impl_from_ID3DXFile(iface);
+     ULONG refcount = InterlockedDecrement(&file->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", file, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", file, refcount);
+ 
+     if (!refcount)
+     {
+diff --git a/dlls/dbghelp/path.c b/dlls/dbghelp/path.c
+index 8c74426..d89ebab 100644
+--- a/dlls/dbghelp/path.c
++++ b/dlls/dbghelp/path.c
+@@ -17,7 +17,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -547,6 +547,8 @@ static BOOL CALLBACK module_find_cb(PCWSTR buffer, PVOID user)
+             struct pdb_lookup           pdb_lookup;
+             char                        fn[MAX_PATH];
+ 
++          memset(&pdb_lookup, 0, sizeof(struct pdb_lookup));
++
+             WideCharToMultiByte(CP_ACP, 0, buffer, -1, fn, MAX_PATH, NULL, NULL);
+             pdb_lookup.filename = fn;
+ 
+diff --git a/dlls/ddraw/main.c b/dlls/ddraw/main.c
+index 06b448f..14f7842 100644
+--- a/dlls/ddraw/main.c
++++ b/dlls/ddraw/main.c
+@@ -20,7 +20,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ #include "wine/port.h"
+ 
+@@ -249,6 +249,11 @@ DDRAW_Create(const GUID *guid,
+     {
+         device_type = WINED3D_DEVICE_TYPE_HAL;
+     }
++    else if(guid && guid->Data1 == 0xaeb2cdd4)
++    {
++      FIXME("call to 0xaeb2cdd4\n");
++      device_type = WINED3D_DEVICE_TYPE_HAL;
++    }
+     else
+     {
+         device_type = 0;
+@@ -611,7 +616,7 @@ static ULONG WINAPI ddraw_class_factory_AddRef(IClassFactory *iface)
+     struct ddraw_class_factory *factory = impl_from_IClassFactory(iface);
+     ULONG ref = InterlockedIncrement(&factory->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", factory, ref);
++//    TRACE("%p increasing refcount to %u.\n", factory, ref);
+ 
+     return ref;
+ }
+@@ -631,7 +636,7 @@ static ULONG WINAPI ddraw_class_factory_Release(IClassFactory *iface)
+     struct ddraw_class_factory *factory = impl_from_IClassFactory(iface);
+     ULONG ref = InterlockedDecrement(&factory->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", factory, ref);
++//    TRACE("%p decreasing refcount to %u.\n", factory, ref);
+ 
+     if (!ref)
+         HeapFree(GetProcessHeap(), 0, factory);
+diff --git a/dlls/ddraw/surface.c b/dlls/ddraw/surface.c
+index 45c7594..a3becc9 100644
+--- a/dlls/ddraw/surface.c
++++ b/dlls/ddraw/surface.c
+@@ -20,7 +20,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ #include "wine/port.h"
+ 
+@@ -348,7 +348,7 @@ static ULONG WINAPI ddraw_surface7_AddRef(IDirectDrawSurface7 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface7(iface);
+     ULONG refcount = InterlockedIncrement(&This->ref7);
+ 
+-    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 1)
+     {
+@@ -363,7 +363,7 @@ static ULONG WINAPI ddraw_surface4_AddRef(IDirectDrawSurface4 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface4(iface);
+     ULONG refcount = InterlockedIncrement(&This->ref4);
+ 
+-    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
++ //   TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 1)
+     {
+@@ -378,7 +378,7 @@ static ULONG WINAPI ddraw_surface3_AddRef(IDirectDrawSurface3 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface3(iface);
+     ULONG refcount = InterlockedIncrement(&This->ref3);
+ 
+-    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 1)
+     {
+@@ -393,7 +393,7 @@ static ULONG WINAPI ddraw_surface2_AddRef(IDirectDrawSurface2 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface2(iface);
+     ULONG refcount = InterlockedIncrement(&This->ref2);
+ 
+-    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 1)
+     {
+@@ -408,7 +408,7 @@ static ULONG WINAPI ddraw_surface1_AddRef(IDirectDrawSurface *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface(iface);
+     ULONG refcount = InterlockedIncrement(&This->ref1);
+ 
+-    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 1)
+     {
+@@ -423,7 +423,7 @@ static ULONG WINAPI ddraw_gamma_control_AddRef(IDirectDrawGammaControl *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawGammaControl(iface);
+     ULONG refcount = InterlockedIncrement(&This->gamma_count);
+ 
+-    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p increasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 1)
+     {
+@@ -437,7 +437,7 @@ static ULONG WINAPI d3d_texture2_AddRef(IDirect3DTexture2 *iface)
+ {
+     struct ddraw_surface *surface = impl_from_IDirect3DTexture2(iface);
+ 
+-    TRACE("iface %p.\n", iface);
++ //   TRACE("iface %p.\n", iface);
+ 
+     return IUnknown_AddRef(surface->texture_outer);
+ }
+@@ -446,7 +446,7 @@ static ULONG WINAPI d3d_texture1_AddRef(IDirect3DTexture *iface)
+ {
+     struct ddraw_surface *surface = impl_from_IDirect3DTexture(iface);
+ 
+-    TRACE("iface %p.\n", iface);
++//    TRACE("iface %p.\n", iface);
+ 
+     return IUnknown_AddRef(surface->texture_outer);
+ }
+@@ -541,7 +541,7 @@ static void ddraw_surface_cleanup(struct ddraw_surface *surface)
+ ULONG ddraw_surface_release_iface(struct ddraw_surface *This)
+ {
+     ULONG iface_count = InterlockedDecrement(&This->iface_count);
+-    TRACE("%p decreasing iface count to %u.\n", This, iface_count);
++//    TRACE("%p decreasing iface count to %u.\n", This, iface_count);
+ 
+     if (iface_count == 0)
+     {
+@@ -599,7 +599,7 @@ static ULONG WINAPI ddraw_surface7_Release(IDirectDrawSurface7 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface7(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref7);
+ 
+-    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+     {
+@@ -614,7 +614,7 @@ static ULONG WINAPI ddraw_surface4_Release(IDirectDrawSurface4 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface4(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref4);
+ 
+-    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+     {
+@@ -629,7 +629,7 @@ static ULONG WINAPI ddraw_surface3_Release(IDirectDrawSurface3 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface3(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref3);
+ 
+-    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+     {
+@@ -644,7 +644,7 @@ static ULONG WINAPI ddraw_surface2_Release(IDirectDrawSurface2 *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface2(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref2);
+ 
+-    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+     {
+@@ -659,7 +659,7 @@ static ULONG WINAPI ddraw_surface1_Release(IDirectDrawSurface *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawSurface(iface);
+     ULONG refcount = InterlockedDecrement(&This->ref1);
+ 
+-    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+     {
+@@ -674,7 +674,7 @@ static ULONG WINAPI ddraw_gamma_control_Release(IDirectDrawGammaControl *iface)
+     struct ddraw_surface *This = impl_from_IDirectDrawGammaControl(iface);
+     ULONG refcount = InterlockedDecrement(&This->gamma_count);
+ 
+-    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
++//    TRACE("iface %p decreasing refcount to %u.\n", iface, refcount);
+ 
+     if (refcount == 0)
+     {
+@@ -688,7 +688,11 @@ static ULONG WINAPI d3d_texture2_Release(IDirect3DTexture2 *iface)
+ {
+     struct ddraw_surface *surface = impl_from_IDirect3DTexture2(iface);
+ 
+-    TRACE("iface %p.\n", iface);
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
++ //   TRACE("iface %p.\n", iface);
+ 
+     return IUnknown_Release(surface->texture_outer);
+ }
+@@ -697,7 +701,11 @@ static ULONG WINAPI d3d_texture1_Release(IDirect3DTexture *iface)
+ {
+     struct ddraw_surface *surface = impl_from_IDirect3DTexture(iface);
+ 
+-    TRACE("iface %p.\n", iface);
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
++//    TRACE("iface %p.\n", iface);
+ 
+     return IUnknown_Release(surface->texture_outer);
+ }
+@@ -737,6 +745,10 @@ static HRESULT WINAPI ddraw_surface7_GetAttachedSurface(IDirectDrawSurface7 *ifa
+     DDSCAPS2 our_caps;
+     int i;
+ 
++  if (!This) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, Caps, Surface);
+ 
+     wined3d_mutex_lock();
+@@ -823,6 +835,10 @@ static HRESULT WINAPI ddraw_surface4_GetAttachedSurface(IDirectDrawSurface4 *ifa
+     IDirectDrawSurface7 *attachment7;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     hr = ddraw_surface7_GetAttachedSurface(&surface->IDirectDrawSurface7_iface,
+@@ -849,6 +865,10 @@ static HRESULT WINAPI ddraw_surface3_GetAttachedSurface(IDirectDrawSurface3 *ifa
+     DDSCAPS2 caps2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     caps2.dwCaps  = caps->dwCaps;
+@@ -880,6 +900,10 @@ static HRESULT WINAPI ddraw_surface2_GetAttachedSurface(IDirectDrawSurface2 *ifa
+     DDSCAPS2 caps2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     caps2.dwCaps  = caps->dwCaps;
+@@ -911,6 +935,10 @@ static HRESULT WINAPI ddraw_surface1_GetAttachedSurface(IDirectDrawSurface *ifac
+     DDSCAPS2 caps2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, caps %p, attachment %p.\n", iface, caps, attachment);
+ 
+     caps2.dwCaps  = caps->dwCaps;
+@@ -1040,6 +1068,10 @@ static HRESULT WINAPI ddraw_surface7_Lock(IDirectDrawSurface7 *iface,
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1058,6 +1090,10 @@ static HRESULT WINAPI ddraw_surface4_Lock(IDirectDrawSurface4 *iface, RECT *rect
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface4(iface);
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1078,6 +1114,10 @@ static HRESULT WINAPI ddraw_surface3_Lock(IDirectDrawSurface3 *iface, RECT *rect
+     DDSURFACEDESC2 surface_desc2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1104,6 +1144,10 @@ static HRESULT WINAPI ddraw_surface2_Lock(IDirectDrawSurface2 *iface, RECT *rect
+     DDSURFACEDESC2 surface_desc2;
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1129,6 +1173,10 @@ static HRESULT WINAPI ddraw_surface1_Lock(IDirectDrawSurface *iface, RECT *rect,
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface(iface);
+     DDSURFACEDESC2 surface_desc2;
+     HRESULT hr;
++  if (!surface) {
++    return DDERR_INVALIDPARAMS;
++  }
++  
+     TRACE("iface %p, rect %s, surface_desc %p, flags %#x, h %p.\n",
+             iface, wine_dbgstr_rect(rect), surface_desc, flags, h);
+ 
+@@ -1166,6 +1214,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface7_Unlock(IDirectDrawSurface
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface7(iface);
+     HRESULT hr;
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, rect %s.\n", iface, wine_dbgstr_rect(pRect));
+ 
+     wined3d_mutex_lock();
+@@ -1181,6 +1233,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface4_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface4(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, rect %p.\n", iface, pRect);
+ 
+     return ddraw_surface7_Unlock(&surface->IDirectDrawSurface7_iface, pRect);
+@@ -1190,6 +1246,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface3_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface3(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, data %p.\n", iface, data);
+ 
+     /* data might not be the LPRECT of later versions, so drop it. */
+@@ -1200,6 +1260,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface2_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface2(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, data %p.\n", iface, data);
+ 
+     /* data might not be the LPRECT of later versions, so drop it. */
+@@ -1210,6 +1274,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface1_Unlock(IDirectDrawSurface
+ {
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface(iface);
+ 
++  if (!surface) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, data %p.\n", iface, data);
+ 
+     /* data might not be the LPRECT of later versions, so drop it. */
+@@ -1225,10 +1293,14 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface7_Flip(IDirectDrawSurface7
+     struct ddraw_texture *ddraw_texture, *prev_ddraw_texture;
+     DDSCAPS2 caps = {DDSCAPS_FLIP, 0, 0, {0}};
+     struct wined3d_texture *texture;
+-    IDirectDrawSurface7 *current;
++    IDirectDrawSurface7 *current = NULL;
+     struct wined3d_surface *tmp;
+     HRESULT hr;
+ 
++  if (!src_impl || !dst_impl) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, src %p, flags %#x.\n", iface, src, flags);
+ 
+     if (src == iface || !(dst_impl->surface_desc.ddsCaps.dwCaps & (DDSCAPS_FRONTBUFFER | DDSCAPS_OVERLAY)))
+@@ -1345,6 +1417,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface4_Flip(IDirectDrawSurface4
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface4(iface);
+     struct ddraw_surface *dst_impl = unsafe_impl_from_IDirectDrawSurface4(dst);
+ 
++  if (!surface || !dst_impl) {
++    return DD_OK;
++  }
++
+     TRACE("iface %p, dst %p, flags %#x.\n", iface, dst, flags);
+ 
+     return ddraw_surface7_Flip(&surface->IDirectDrawSurface7_iface,
+@@ -1357,6 +1433,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface3_Flip(IDirectDrawSurface3
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface3(iface);
+     struct ddraw_surface *dst_impl = unsafe_impl_from_IDirectDrawSurface3(dst);
+ 
++  if (!surface || !dst_impl) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, dst %p, flags %#x.\n", iface, dst, flags);
+ 
+     return ddraw_surface7_Flip(&surface->IDirectDrawSurface7_iface,
+@@ -1369,6 +1449,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface2_Flip(IDirectDrawSurface2
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface2(iface);
+     struct ddraw_surface *dst_impl = unsafe_impl_from_IDirectDrawSurface2(dst);
+ 
++  if (!surface || !dst_impl) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, dst %p, flags %#x.\n", iface, dst, flags);
+ 
+     return ddraw_surface7_Flip(&surface->IDirectDrawSurface7_iface,
+@@ -1381,6 +1465,10 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH ddraw_surface1_Flip(IDirectDrawSurface *
+     struct ddraw_surface *surface = impl_from_IDirectDrawSurface(iface);
+     struct ddraw_surface *dst_impl = unsafe_impl_from_IDirectDrawSurface(dst);
+ 
++  if (!surface || !dst_impl) {
++    return DD_OK;
++  }
++  
+     TRACE("iface %p, dst %p, flags %#x.\n", iface, dst, flags);
+ 
+     return ddraw_surface7_Flip(&surface->IDirectDrawSurface7_iface,
+@@ -6239,6 +6327,11 @@ void ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw, stru
+     DDSURFACEDESC2 *desc = &surface->surface_desc;
+     struct wined3d_resource_desc wined3d_desc;
+     unsigned int version = texture->version;
++    UINT row_pitch, slice_pitch;
++    struct wined3d_resource *resource = wined3d_surface_get_resource(wined3d_surface);
++
++    wined3d_resource_get_pitch(resource, &row_pitch, &slice_pitch);
++
+ 
+     surface->IDirectDrawSurface7_iface.lpVtbl = &ddraw_surface7_vtbl;
+     surface->IDirectDrawSurface4_iface.lpVtbl = &ddraw_surface4_vtbl;
+@@ -6269,7 +6362,7 @@ void ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw, stru
+     }
+ 
+     *desc = texture->surface_desc;
+-    wined3d_resource_get_desc(wined3d_surface_get_resource(wined3d_surface), &wined3d_desc);
++    wined3d_resource_get_desc(resource, &wined3d_desc);
+     desc->dwWidth = wined3d_desc.width;
+     desc->dwHeight = wined3d_desc.height;
+     surface->first_attached = surface;
+@@ -6279,14 +6372,16 @@ void ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw, stru
+         if (desc->dwFlags & DDSD_LPSURFACE)
+             desc->u1.dwLinearSize = ~0u;
+         else
+-            desc->u1.dwLinearSize = wined3d_surface_get_pitch(wined3d_surface) * ((desc->dwHeight + 3) / 4);
++        {
++            desc->u1.dwLinearSize = row_pitch * ((desc->dwHeight + 3) / 4);
++        }
+         desc->dwFlags |= DDSD_LINEARSIZE;
+         desc->dwFlags &= ~(DDSD_LPSURFACE | DDSD_PITCH);
+     }
+     else
+     {
+         if (!(desc->dwFlags & DDSD_LPSURFACE))
+-            desc->u1.lPitch = wined3d_surface_get_pitch(wined3d_surface);
++            desc->u1.lPitch = row_pitch;
+         desc->dwFlags |= DDSD_PITCH;
+         desc->dwFlags &= ~(DDSD_LPSURFACE | DDSD_LINEARSIZE);
+     }
+diff --git a/dlls/dinput/joystick_osx.c b/dlls/dinput/joystick_osx.c
+index 6a8926d..e910c1d 100644
+--- a/dlls/dinput/joystick_osx.c
++++ b/dlls/dinput/joystick_osx.c
+@@ -19,7 +19,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ #include "wine/port.h"
+ 
+@@ -702,7 +702,7 @@ static void poll_osx_device_state(LPDIRECTINPUTDEVICE8A iface)
+         for ( idx = 0; idx < cnt; idx++ )
+         {
+             IOHIDValueRef valueRef;
+-            int val, oldVal, newVal;
++            int val, oldVal = 0, newVal;
+             IOHIDElementRef element = ( IOHIDElementRef ) CFArrayGetValueAtIndex( device->elements, idx );
+             int type = IOHIDElementGetType( element );
+ 
+diff --git a/dlls/ieframe/client.c b/dlls/ieframe/client.c
+index dadbe13..4ea35b8 100644
+--- a/dlls/ieframe/client.c
++++ b/dlls/ieframe/client.c
+@@ -15,7 +15,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include <stdio.h>
+ 
+ #include "ieframe.h"
+@@ -297,6 +297,9 @@ static HRESULT WINAPI InPlaceSite_OnInPlaceActivateEx(IOleInPlaceSiteEx *iface,
+     TRACE("(%p)->(%p, %x)\n", This, pfNoRedraw, dwFlags);
+ 
+     /* FIXME: Avoid redraw, when possible */
++    if (!pfNoRedraw) {
++      return S_OK;
++    }
+     *pfNoRedraw = FALSE;
+ 
+     if (dwFlags) {
+diff --git a/dlls/kernel32/process.c b/dlls/kernel32/process.c
+index 89ae5c4..d481c50 100644
+--- a/dlls/kernel32/process.c
++++ b/dlls/kernel32/process.c
+@@ -1102,6 +1102,8 @@ static DWORD WINAPI start_process( PEB *peb )
+         DPRINTF( "%04x:Starting process %s (entryproc=%p)\n", GetCurrentThreadId(),
+                  debugstr_w(peb->ProcessParameters->ImagePathName.Buffer), entry );
+ 
++    FIXME("Wine XSherry %s is a testing version based on WineHQ.\n", wine_get_version());
++
+     SetLastError( 0 );  /* clear error code */
+     if (peb->BeingDebugged) DbgBreakPoint();
+     return call_process_entry( peb, entry );
+diff --git a/dlls/krnl386.exe16/int2f.c b/dlls/krnl386.exe16/int2f.c
+index f5b5aaa..a62dbaf 100644
+--- a/dlls/krnl386.exe16/int2f.c
++++ b/dlls/krnl386.exe16/int2f.c
+@@ -20,7 +20,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ 
+ #include <string.h>
+@@ -1027,8 +1027,8 @@ static void MSCDEX_Handler(CONTEXT* context)
+                ERR("ES:BX==0 ! SEGFAULT ?\n");
+                ERR("-->BX=0x%04x, ES=0x%04x, DS=0x%04x, CX=0x%04x\n",
+                    BX_reg(context), context->SegEs, context->SegDs, CX_reg(context));
+-               driver_request[4] |= 0x80;
+-               driver_request[3] = 5;  /* bad request length */
++   //            driver_request[4] |= 0x80;
++   //            driver_request[3] = 5;  /* bad request length */
+                return;
+            }
+ 
+diff --git a/dlls/user32/misc.c b/dlls/user32/misc.c
+index 33016a1..3621b64 100644
+--- a/dlls/user32/misc.c
++++ b/dlls/user32/misc.c
+@@ -284,18 +284,26 @@ BOOL WINAPI EnumDisplayDevicesA( LPCSTR lpDevice, DWORD i, LPDISPLAY_DEVICEA lpD
+ BOOL WINAPI EnumDisplayDevicesW( LPCWSTR lpDevice, DWORD i, LPDISPLAY_DEVICEW lpDisplayDevice,
+                                  DWORD dwFlags )
+ {
+-    FIXME("(%s,%d,%p,0x%08x), stub!\n",debugstr_w(lpDevice),i,lpDisplayDevice,dwFlags);
++    if (!lpDisplayDevice) {
++        return FALSE;
++    }
+ 
+-    if (i)
++    if (i) {
++        FIXME("(%s,%d,%p,0x%08x), stub!\n",debugstr_w(lpDevice),i,lpDisplayDevice,dwFlags);
+         return FALSE;
++    }
+ 
+-    memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));
+-    memcpy(lpDisplayDevice->DeviceString, primary_device_string, sizeof(primary_device_string));
+-  
+     lpDisplayDevice->StateFlags =
+-        DISPLAY_DEVICE_ATTACHED_TO_DESKTOP |
+-        DISPLAY_DEVICE_PRIMARY_DEVICE |
+-        DISPLAY_DEVICE_VGA_COMPATIBLE;
++      DISPLAY_DEVICE_ATTACHED_TO_DESKTOP |
++      DISPLAY_DEVICE_VGA_COMPATIBLE;
++
++    if (!lpDevice) {
++        lpDisplayDevice->StateFlags |= DISPLAY_DEVICE_PRIMARY_DEVICE;
++        memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));
++    } else {
++        strcpyW(lpDisplayDevice->DeviceName, lpDevice);
++    }
++    memcpy(lpDisplayDevice->DeviceString, primary_device_string, sizeof(primary_device_string));
+ 
+     if(lpDisplayDevice->cb >= offsetof(DISPLAY_DEVICEW, DeviceID) + sizeof(lpDisplayDevice->DeviceID))
+         memcpy(lpDisplayDevice->DeviceID, primary_device_deviceid, sizeof(primary_device_deviceid));
+diff --git a/dlls/windowscodecs/stream.c b/dlls/windowscodecs/stream.c
+index d05e940..5d24cc1 100644
+--- a/dlls/windowscodecs/stream.c
++++ b/dlls/windowscodecs/stream.c
+@@ -15,7 +15,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "wine/debug.h"
+ 
+ #define COBJMACROS
+@@ -1021,7 +1021,7 @@ HRESULT stream_initialize_from_filehandle(IWICStream *iface, HANDLE file)
+     StreamOnFileHandle *pObject;
+     IWICStream *stream = NULL;
+     HANDLE map;
+-    void *mem;
++    void *mem = NULL;
+     LARGE_INTEGER size;
+     HRESULT hr;
+     TRACE("(%p,%p)\n", iface, file);
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index 0e8b32b..4a6e0c6 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -3138,7 +3146,7 @@ static void context_bind_shader_resources(struct wined3d_context *context, const
+ 
+             if (!(view = state->shader_resource_view[shader_types[i].type][entry->resource_idx]))
+             {
+-                WARN("No resource view bound at index %u, %u.\n", shader_types[i].type, entry->resource_idx);
++                //  WARN("No resource view bound at index %u, %u.\n", shader_types[i].type, entry->resource_idx);  //Slice - legion times
+                 continue;
+             }
+ 
+@@ -3150,7 +3158,7 @@ static void context_bind_shader_resources(struct wined3d_context *context, const
+ 
+             if (!(sampler = state->sampler[shader_types[i].type][entry->sampler_idx]))
+             {
+-                WARN("No sampler object bound at index %u, %u.\n", shader_types[i].type, entry->sampler_idx);
++                //  WARN("No sampler object bound at index %u, %u.\n", shader_types[i].type, entry->sampler_idx);
+                 continue;
+             }
+ 
+diff --git a/dlls/wined3d/device.c b/dlls/wined3d/device.c
+index 170536d..a384d3d 100644
+--- a/dlls/wined3d/device.c
++++ b/dlls/wined3d/device.c
+@@ -479,7 +479,7 @@ ULONG CDECL wined3d_device_incref(struct wined3d_device *device)
+ {
+     ULONG refcount = InterlockedIncrement(&device->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", device, refcount);
++//    TRACE("%p increasing refcount to %u.\n", device, refcount);
+ 
+     return refcount;
+ }
+@@ -495,7 +495,7 @@ ULONG CDECL wined3d_device_decref(struct wined3d_device *device)
+ {
+     ULONG refcount = InterlockedDecrement(&device->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", device, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", device, refcount);
+ 
+     if (!refcount)
+     {
+@@ -519,11 +519,11 @@ ULONG CDECL wined3d_device_decref(struct wined3d_device *device)
+         {
+             struct wined3d_resource *resource;
+ 
+-            FIXME("Device released with resources still bound, acceptable but unexpected.\n");
++            WARN("Device released with resources still bound, acceptable but unexpected.\n");
+ 
+             LIST_FOR_EACH_ENTRY(resource, &device->resources, struct wined3d_resource, resource_list_entry)
+             {
+-                FIXME("Leftover resource %p with type %s (%#x).\n",
++                TRACE("Leftover resource %p with type %s (%#x).\n",
+                         resource, debug_d3dresourcetype(resource->type), resource->type);
+             }
+         }
+@@ -3473,21 +3473,27 @@ static HRESULT device_update_volume(struct wined3d_device *device,
+     TRACE("device %p, src_volume %p, dst_volume %p.\n",
+             device, src_volume, dst_volume);
+ 
+-    if (src_volume->resource.format != dst_volume->resource.format)
++    if (src_volume->resource.format->id != dst_volume->resource.format->id)
+     {
+-        FIXME("Source and destination formats do not match.\n");
++        FIXME("Source %x and destination %x formats do not match.\n",
++              src_volume->resource.format->id, dst_volume->resource.format->id);
++        //Slice - convert?
+         return WINED3DERR_INVALIDCALL;
+     }
+     if (src_volume->resource.width != dst_volume->resource.width
+             || src_volume->resource.height != dst_volume->resource.height
+             || src_volume->resource.depth != dst_volume->resource.depth)
+     {
+-        FIXME("Source and destination sizes do not match.\n");
++        FIXME("Source (%d, %d, %d) and destination (%d, %d, %d) sizes do not match.\n",
++              src_volume->resource.width, src_volume->resource.height, src_volume->resource.depth, 
++              dst_volume->resource.width, dst_volume->resource.height, dst_volume->resource.depth);
+         return WINED3DERR_INVALIDCALL;
+     }
+ 
+-    if (FAILED(hr = wined3d_volume_map(src_volume, &src, NULL, WINED3D_MAP_READONLY)))
++  if (FAILED(hr = wined3d_volume_map(src_volume, &src, NULL, WINED3D_MAP_READONLY))) {
++      FIXME("wined3d_volume_map failed\n");
+         return hr;
++  }
+ 
+     context = context_acquire(device, NULL);
+ 
+@@ -3543,8 +3549,14 @@ HRESULT CDECL wined3d_device_update_texture(struct wined3d_device *device,
+         return WINED3DERR_INVALIDCALL;
+     }
+ 
+-    level_count = min(wined3d_texture_get_level_count(src_texture),
+-            wined3d_texture_get_level_count(dst_texture));
++    /* Check that both textures have the compatible numbers of levels. */
++    //Slice
++    level_count = wined3d_texture_get_level_count(dst_texture);
++    if (wined3d_texture_get_level_count(src_texture) < level_count)
++    {
++        WARN("Source has fewer level counts then destination, returning WINED3DERR_INVALIDCALL.\n");
++        return  WINED3DERR_INVALIDCALL;
++    }
+ 
+     src_size = max(src_texture->resource.width, src_texture->resource.height);
+     dst_size = max(dst_texture->resource.width, dst_texture->resource.height);
+@@ -3558,7 +3570,7 @@ HRESULT CDECL wined3d_device_update_texture(struct wined3d_device *device,
+         src_size >>= 1;
+         ++src_skip_levels;
+     }
+-
++	if (src_skip_levels) FIXME("skip %d levels\n", src_skip_levels);
+     /* Make sure that the destination texture is loaded. */
+     context = context_acquire(device, NULL);
+     wined3d_texture_load(dst_texture, context, FALSE);
+@@ -3617,6 +3629,7 @@ HRESULT CDECL wined3d_device_update_texture(struct wined3d_device *device,
+         {
+             for (i = 0; i < level_count; ++i)
+             {
++            //Slice - make here surface from volume? Or implement decompress?
+                 hr = device_update_volume(device,
+                         volume_from_resource(wined3d_texture_get_sub_resource(src_texture,
+                                 i + src_skip_levels)),
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index 6fe0ff6..c74db02 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -507,6 +507,8 @@ static void shader_glsl_load_samplers(const struct wined3d_gl_info *gl_info,
+             mapped_unit = tex_unit_map[sampler_info[i].base_idx + j];
+             if (mapped_unit == WINED3D_UNMAPPED_STAGE || mapped_unit >= gl_info->limits.combined_samplers)
+             {
++                //WINED3D_UNMAPPED_STAGE = 0xFFFFFFFF =
++                //err:d3d_shader:shader_glsl_load_samplers Trying to load sampler vs_sampler3 on unsupported unit 4294967295.
+                 ERR("Trying to load sampler %s on unsupported unit %u.\n", sampler_name->buffer, mapped_unit);
+                 continue;
+             }
+@@ -6894,7 +6911,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
+     GLuint vs_id = 0;
+     GLuint gs_id = 0;
+     GLuint ps_id = 0;
+-    struct list *ps_list, *vs_list;
++    struct list *ps_list = NULL, *vs_list = NULL;
+     WORD attribs_map;
+     struct wined3d_string_buffer *tmp_name;
+ 
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index b86adf1..c9dcdc6 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -148,10 +148,14 @@ enum wined3d_event_query_result wined3d_event_query_finish(const struct wined3d_
+             case GL_CONDITION_SATISFIED:
+                 ret = WINED3D_EVENT_QUERY_OK;
+                 break;
++            //Slice
++            case GL_TIMEOUT_EXPIRED_APPLE:
++                ret = WINED3D_EVENT_QUERY_NOT_STARTED;
++                break;
+ 
+                 /* We don't expect a timeout for a ~584 year wait */
+             default:
+-                ERR("glClientWaitSync returned %#x.\n", gl_ret);
++                ERR("glClientWaitSync returned %#x.\n", gl_ret); //glClientWaitSync returned 0x911b == GL_TIMEOUT_EXPIRED_APPLE
+                 ret = WINED3D_EVENT_QUERY_ERROR;
+         }
+     }
+@@ -181,6 +185,9 @@ void wined3d_event_query_issue(struct wined3d_event_query *query, const struct w
+ {
+     const struct wined3d_gl_info *gl_info;
+     struct wined3d_context *context;
++    if (!query || !device) {
++        return;
++    }
+ 
+     if (query->context)
+     {
+diff --git a/dlls/wined3d/resource.c b/dlls/wined3d/resource.c
+index d466764..972f166 100644
+--- a/dlls/wined3d/resource.c
++++ b/dlls/wined3d/resource.c
+@@ -50,10 +50,12 @@ static DWORD resource_access_from_pool(enum wined3d_pool pool)
+ 
+ static void resource_check_usage(DWORD usage)
+ {
+-    static const DWORD handled = WINED3DUSAGE_RENDERTARGET
++    static DWORD handled = WINED3DUSAGE_RENDERTARGET
+             | WINED3DUSAGE_DEPTHSTENCIL
+             | WINED3DUSAGE_WRITEONLY
+             | WINED3DUSAGE_DYNAMIC
++            | WINED3DUSAGE_SOFTWAREPROCESSING
++            | WINED3DUSAGE_POINTS
+             | WINED3DUSAGE_AUTOGENMIPMAP
+             | WINED3DUSAGE_STATICDECL
+             | WINED3DUSAGE_OVERLAY
+@@ -66,7 +68,15 @@ static void resource_check_usage(DWORD usage)
+      * driver. */
+ 
+     if (usage & ~handled)
++    {
+         FIXME("Unhandled usage flags %#x.\n", usage & ~handled);
++        handled |= usage;
++    }
++
++//#define WINED3DUSAGE_SOFTWAREPROCESSING                         0x00000010
++//#define WINED3DUSAGE_DONOTCLIP                                  0x00000020
++//#define WINED3DUSAGE_POINTS                                     0x00000040
++
+     if ((usage & (WINED3DUSAGE_DYNAMIC | WINED3DUSAGE_WRITEONLY)) == WINED3DUSAGE_DYNAMIC)
+         WARN_(d3d_perf)("WINED3DUSAGE_DYNAMIC used without WINED3DUSAGE_WRITEONLY.\n");
+ }
+@@ -78,8 +88,8 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+         void *parent, const struct wined3d_parent_ops *parent_ops,
+         const struct wined3d_resource_ops *resource_ops)
+ {
+-    const struct wined3d *d3d = device->wined3d;
+-    const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
++    const struct wined3d *d3d; // = device->wined3d;
++    const struct wined3d_gl_info *gl_info; // = &device->adapter->gl_info;
+     static const enum wined3d_gl_resource_type gl_resource_types[][4] =
+     {
+         /* 0                            */ {WINED3D_GL_RES_TYPE_COUNT},
+@@ -94,6 +104,12 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+     enum wined3d_gl_resource_type gl_type = WINED3D_GL_RES_TYPE_COUNT;
+     enum wined3d_gl_resource_type base_type = gl_resource_types[type][0];
+ 
++    if (!device || !resource) {
++        return WINED3DERR_INVALIDCALL;
++    }
++    d3d = device->wined3d;
++    gl_info = &device->adapter->gl_info;
++
+     resource_check_usage(usage);
+ 
+     if (base_type != WINED3D_GL_RES_TYPE_COUNT)
+@@ -365,7 +461,7 @@ DWORD wined3d_resource_sanitize_map_flags(const struct wined3d_resource *resourc
+     else if (flags & (WINED3D_MAP_DISCARD | WINED3D_MAP_NOOVERWRITE)
+             && !(resource->usage & WINED3DUSAGE_DYNAMIC))
+     {
+-        WARN("DISCARD or NOOVERWRITE map on non-dynamic buffer, ignoring.\n");
++        WARN("DISCARD or NOOVERWRITE map on non-dynamic buffer, ignoring.\n"); //tumblebugs2
+         return 0;
+     }
+ 
+@@ -430,3 +526,35 @@ void wined3d_resource_update_draw_binding(struct wined3d_resource *resource)
+     else
+         resource->draw_binding = WINED3D_LOCATION_TEXTURE_RGB;
+ }
++
++void wined3d_resource_get_pitch(const struct wined3d_resource *resource, UINT *row_pitch,
++        UINT *slice_pitch)
++{
++    unsigned int alignment;
++    const struct wined3d_format *format = resource->format;
++
++/*    if (resource->custom_row_pitch)
++    {
++        *row_pitch = resource->custom_row_pitch;
++        *slice_pitch = resource->custom_slice_pitch;
++        return;
++    } */
++
++    alignment = resource->device->surface_alignment;
++    *row_pitch = wined3d_format_calculate_pitch(resource->format, resource->width);
++    *row_pitch = (*row_pitch + alignment - 1) & ~(alignment - 1);
++    //   if (format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_BLOCKS)
++    {
++        /* Since compressed formats are block based, pitch means the amount of
++         * bytes to the next row of block rather than the next row of pixels. */
++        UINT slice_block_count = (resource->height + format->block_height - 1) / format->block_height;
++        *slice_pitch = *row_pitch * slice_block_count;
++    }
++/*    else
++    {
++        *slice_pitch = *row_pitch * resource->height;
++    } */
++
++    TRACE("Returning row pitch %u, slice pitch %u.\n", *row_pitch, *slice_pitch);
++}
++
+diff --git a/dlls/wined3d/shader.c b/dlls/wined3d/shader.c
+index 7e85988..ff261e7 100644
+--- a/dlls/wined3d/shader.c
++++ b/dlls/wined3d/shader.c
+@@ -253,7 +253,7 @@ void string_buffer_clear(struct wined3d_string_buffer *buffer)
+ 
+ BOOL string_buffer_init(struct wined3d_string_buffer *buffer)
+ {
+-    buffer->buffer_size = 32;
++    buffer->buffer_size = 16384;
+     if (!(buffer->buffer = HeapAlloc(GetProcessHeap(), 0, buffer->buffer_size)))
+     {
+         ERR("Failed to allocate shader buffer memory.\n");
+@@ -2118,7 +2118,7 @@ ULONG CDECL wined3d_shader_incref(struct wined3d_shader *shader)
+ {
+     ULONG refcount = InterlockedIncrement(&shader->ref);
+ 
+-    TRACE("%p increasing refcount to %u.\n", shader, refcount);
++//    TRACE("%p increasing refcount to %u.\n", shader, refcount);
+ 
+     return refcount;
+ }
+@@ -2127,7 +2127,7 @@ ULONG CDECL wined3d_shader_decref(struct wined3d_shader *shader)
+ {
+     ULONG refcount = InterlockedDecrement(&shader->ref);
+ 
+-    TRACE("%p decreasing refcount to %u.\n", shader, refcount);
++//    TRACE("%p decreasing refcount to %u.\n", shader, refcount);
+ 
+     if (!refcount)
+     {
+diff --git a/dlls/wined3d/state.c b/dlls/wined3d/state.c
+index 91d6417..b3e8157 100644
+--- a/dlls/wined3d/state.c
++++ b/dlls/wined3d/state.c
+@@ -360,8 +360,11 @@ static GLenum gl_blend_factor(enum wined3d_blend factor, const struct wined3d_fo
+         case WINED3D_BLEND_INVBLENDFACTOR:
+             return GL_ONE_MINUS_CONSTANT_COLOR_EXT;
+         default:
+-            FIXME("Unhandled blend factor %#x.\n", factor);
++        {
++            static int once;
++            if (factor && !once++) FIXME("Unhandled blend factor %#x.\n", factor);
+             return GL_NONE;
++        }
+     }
+ }
+ 
+@@ -1571,6 +1574,7 @@ void state_pointsprite(struct wined3d_context *context, const struct wined3d_sta
+ 
+ static void state_wrap(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
+ {
++    static DWORD once, old_id;
+     if (state->render_states[WINED3D_RS_WRAP0]
+             || state->render_states[WINED3D_RS_WRAP1]
+             || state->render_states[WINED3D_RS_WRAP2]
+@@ -1586,8 +1590,18 @@ static void state_wrap(struct wined3d_context *context, const struct wined3d_sta
+             || state->render_states[WINED3D_RS_WRAP12]
+             || state->render_states[WINED3D_RS_WRAP13]
+             || state->render_states[WINED3D_RS_WRAP14]
+-            || state->render_states[WINED3D_RS_WRAP15])
+-        FIXME("(WINED3D_RS_WRAP0) Texture wrapping not yet supported.\n");
++ 	        || state->render_states[WINED3D_RS_WRAP15]) {
++        if (!once || old_id != state_id) {
++            once++;
++            if (old_id != state_id) {
++                once = 0;
++                old_id = state_id;
++            }
++
++            FIXME("(WINED3D_RS_WRAP0) Texture wrapping not yet supported. id=%d\n", state_id);
++        }
++
++    }
+ }
+ 
+ static void state_msaa_w(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index a8f7179..902a8fe 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -364,6 +364,7 @@ static HRESULT surface_create_dib_section(struct wined3d_surface *surface)
+     BITMAPINFO *b_info;
+     int extraline = 0;
+     DWORD *masks;
++    UINT row_pitch, slice_pitch;
+ 
+     TRACE("surface %p.\n", surface);
+ 
+@@ -409,10 +410,11 @@ static HRESULT surface_create_dib_section(struct wined3d_surface *surface)
+ 
+     b_info->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+     /* TODO: Is there a nicer way to force a specific alignment? (8 byte for ddraw) */
+-    b_info->bmiHeader.biWidth = wined3d_surface_get_pitch(surface) / format->byte_count;
++    wined3d_resource_get_pitch(&surface->resource, &row_pitch, &slice_pitch);
++    b_info->bmiHeader.biWidth = row_pitch / format->byte_count;
+     b_info->bmiHeader.biHeight = 0 - surface->resource.height - extraline;
+     b_info->bmiHeader.biSizeImage = (surface->resource.height + extraline)
+-            * wined3d_surface_get_pitch(surface);
++            * row_pitch;
+     b_info->bmiHeader.biPlanes = 1;
+     b_info->bmiHeader.biBitCount = format->byte_count * 8;
+ 
+@@ -769,6 +771,26 @@ static BOOL surface_is_full_rect(const struct wined3d_surface *surface, const RE
+     return TRUE;
+ }
+ 
++static void prepare_blit_quirks(const struct wined3d_device *device, const struct wined3d_gl_info *gl_info)
++{
++  /* ATI Macs blend blits even though GL_EXT_framebuffer_blit says that this
++   * operation does not blend. This sometimes even happens if GL_BLEND is
++   * disabled, although in my glut test case blending has to be enabled for
++   * the bug to occur. While we're at it, disable blending.
++   *
++   * Tracked by crossover hacks bug 5391. */
++  gl_info->gl_ops.gl.p_glDisable(GL_BLEND);
++  gl_info->gl_ops.gl.p_glBlendFunc(GL_ONE, GL_ZERO);
++  device_invalidate_state(device, STATE_RENDER(WINED3D_RS_ALPHABLENDENABLE));
++  
++  gl_info->gl_ops.gl.p_glDisable(GL_ALPHA_TEST);
++  gl_info->gl_ops.gl.p_glAlphaFunc(GL_ALWAYS, 0.0);
++  device_invalidate_state(device, STATE_RENDER(WINED3D_RS_ALPHATESTENABLE));
++  gl_info->gl_ops.gl.p_glDisable(GL_STENCIL_TEST);
++  gl_info->gl_ops.gl.p_glStencilFunc(GL_ALWAYS, 0, 0);
++  device_invalidate_state(device, STATE_RENDER(WINED3D_RS_STENCILENABLE));
++}
++
+ static void surface_depth_blt_fbo(const struct wined3d_device *device,
+         struct wined3d_surface *src_surface, DWORD src_location, const RECT *src_rect,
+         struct wined3d_surface *dst_surface, DWORD dst_location, const RECT *dst_rect)
+@@ -853,6 +875,9 @@ static void surface_depth_blt_fbo(const struct wined3d_device *device,
+     gl_info->gl_ops.gl.p_glDisable(GL_SCISSOR_TEST);
+     context_invalidate_state(context, STATE_RENDER(WINED3D_RS_SCISSORTESTENABLE));
+ 
++  if (gl_info->quirks & WINED3D_CX_QUIRK_BLIT)
++    prepare_blit_quirks(device, gl_info);
++
+     gl_info->fbo_ops.glBlitFramebuffer(src_rect->left, src_rect->top, src_rect->right, src_rect->bottom,
+             dst_rect->left, dst_rect->top, dst_rect->right, dst_rect->bottom, gl_mask, GL_NEAREST);
+     checkGLcall("glBlitFramebuffer()");
+@@ -1338,14 +1363,14 @@ static void surface_download_data(struct wined3d_surface *surface, const struct
+         void *mem;
+         GLenum gl_format = format->glFormat;
+         GLenum gl_type = format->glType;
+-        int src_pitch = 0;
+-        int dst_pitch = 0;
++        UINT src_pitch = 0;
++        UINT dst_row_pitch, dst_slice_pitch;
+ 
+         if (surface->flags & SFLAG_NONPOW2)
+         {
+             unsigned char alignment = surface->resource.device->surface_alignment;
+             src_pitch = format->byte_count * surface->pow2Width;
+-            dst_pitch = wined3d_surface_get_pitch(surface);
++            wined3d_resource_get_pitch(&surface->resource, &dst_row_pitch, &dst_slice_pitch);
+             src_pitch = (src_pitch + alignment - 1) & ~(alignment - 1);
+             mem = HeapAlloc(GetProcessHeap(), 0, src_pitch * surface->pow2Height);
+         }
+@@ -1432,12 +1457,12 @@ static void surface_download_data(struct wined3d_surface *surface, const struct
+              * won't be released, and doesn't have to be re-read. */
+             src_data = mem;
+             dst_data = data.addr;
+-            TRACE("(%p) : Repacking the surface data from pitch %d to pitch %d\n", surface, src_pitch, dst_pitch);
++            TRACE("(%p) : Repacking the surface data from pitch %d to pitch %d\n", surface, src_pitch, dst_row_pitch);
+             for (y = 0; y < surface->resource.height; ++y)
+             {
+-                memcpy(dst_data, src_data, dst_pitch);
++                memcpy(dst_data, src_data, dst_row_pitch);
+                 src_data += src_pitch;
+-                dst_data += dst_pitch;
++                dst_data += dst_row_pitch;
+             }
+ 
+             HeapFree(GetProcessHeap(), 0, mem);
+@@ -1599,7 +1624,7 @@ HRESULT surface_upload_from_surface(struct wined3d_surface *dst_surface, const P
+     UINT update_w, update_h;
+     UINT dst_w, dst_h;
+     RECT r, dst_rect;
+-    UINT src_pitch;
++    UINT src_row_pitch, src_slice_pitch;
+     POINT p;
+ 
+     TRACE("dst_surface %p, dst_point %s, src_surface %p, src_rect %s.\n",
+@@ -1687,10 +1712,11 @@ HRESULT surface_upload_from_surface(struct wined3d_surface *dst_surface, const P
+     wined3d_texture_bind_and_dirtify(dst_surface->container, context, FALSE);
+ 
+     surface_get_memory(src_surface, &data, src_surface->locations);
+-    src_pitch = wined3d_surface_get_pitch(src_surface);
++    //src_pitch = wined3d_surface_get_pitch(src_surface);
++  wined3d_resource_get_pitch(&src_surface->resource, &src_row_pitch, &src_slice_pitch);
+ 
+     wined3d_surface_upload_data(dst_surface, gl_info, src_format, src_rect,
+-            src_pitch, dst_point, FALSE, wined3d_const_bo_address(&data));
++            src_row_pitch, dst_point, FALSE, wined3d_const_bo_address(&data));
+ 
+     context_release(context);
+ 
+@@ -1928,7 +1954,7 @@ HRESULT CDECL wined3d_surface_is_lost(const struct wined3d_surface *surface)
+ {
+     TRACE("surface %p.\n", surface);
+ 
+-    /* D3D8 and 9 lose full devices, ddraw only surfaces. */
++    /* D3D8 and 9 loose full devices, ddraw only surfaces. */
+     return surface->flags & SFLAG_LOST ? WINED3DERR_DEVICELOST : WINED3D_OK;
+ }
+ 
+@@ -1939,7 +1965,7 @@ HRESULT CDECL wined3d_surface_restore(struct wined3d_surface *surface)
+     surface->flags &= ~SFLAG_LOST;
+     return WINED3D_OK;
+ }
+-
++/*
+ DWORD CDECL wined3d_surface_get_pitch(const struct wined3d_surface *surface)
+ {
+     unsigned int alignment;
+@@ -1958,7 +1984,7 @@ DWORD CDECL wined3d_surface_get_pitch(const struct wined3d_surface *surface)
+ 
+     return pitch;
+ }
+-
++*/
+ HRESULT CDECL wined3d_surface_set_overlay_position(struct wined3d_surface *surface, LONG x, LONG y)
+ {
+     LONG w, h;
+@@ -2332,6 +2358,126 @@ static void convert_yuy2_r5g6b5(const BYTE *src, BYTE *dst,
+     }
+ }
+ 
++static void convert_dxt1_a8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_dxt1_x8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_dxt1_a4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4A4_UNORM, w, h);
++}
++
++static void convert_dxt1_x4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4X4_UNORM, w, h);
++}
++
++static void convert_dxt1_a1r5g5b5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5A1_UNORM, w, h);
++}
++
++static void convert_dxt1_x1r5g5b5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5X1_UNORM, w, h);
++}
++
++static void convert_dxt3_a8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_dxt3_x8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_dxt3_a4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4A4_UNORM, w, h);
++}
++
++static void convert_dxt3_x4r4g4b4(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4X4_UNORM, w, h);
++}
++
++static void convert_dxt5_a8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_dxt5_x8r8g8b8(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_a8r8g8b8_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_x8r8g8b8_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_a1r5g5b5_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5A1_UNORM, w, h);
++}
++
++static void convert_x1r5g5b5_dxt1(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5X1_UNORM, w, h);
++}
++
++static void convert_a8r8g8b8_dxt3(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_x8r8g8b8_dxt3(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt3_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
++static void convert_a8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
++}
++
++static void convert_x8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++{
++    wined3d_dxt5_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
++}
++
+ struct d3dfmt_converter_desc
+ {
+     enum wined3d_format_id from, to;
+@@ -2348,6 +2494,33 @@ static const struct d3dfmt_converter_desc converters[] =
+     {WINED3DFMT_YUY2,           WINED3DFMT_B5G6R5_UNORM,    convert_yuy2_r5g6b5},
+ };
+ 
++static const struct d3dfmt_converter_desc dxtn_converters[] =
++{
++    /* decode DXT */
++    {WINED3DFMT_DXT1,           WINED3DFMT_B8G8R8A8_UNORM,  convert_dxt1_a8r8g8b8},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B8G8R8X8_UNORM,  convert_dxt1_x8r8g8b8},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B4G4R4A4_UNORM,  convert_dxt1_a4r4g4b4},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B4G4R4X4_UNORM,  convert_dxt1_x4r4g4b4},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B5G5R5A1_UNORM,  convert_dxt1_a1r5g5b5},
++    {WINED3DFMT_DXT1,           WINED3DFMT_B5G5R5X1_UNORM,  convert_dxt1_x1r5g5b5},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B8G8R8A8_UNORM,  convert_dxt3_a8r8g8b8},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B8G8R8X8_UNORM,  convert_dxt3_x8r8g8b8},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B4G4R4A4_UNORM,  convert_dxt3_a4r4g4b4},
++    {WINED3DFMT_DXT3,           WINED3DFMT_B4G4R4X4_UNORM,  convert_dxt3_x4r4g4b4},
++    {WINED3DFMT_DXT5,           WINED3DFMT_B8G8R8A8_UNORM,  convert_dxt5_a8r8g8b8},
++    {WINED3DFMT_DXT5,           WINED3DFMT_B8G8R8X8_UNORM,  convert_dxt5_x8r8g8b8},
++
++    /* encode DXT */
++    {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_DXT1,            convert_a8r8g8b8_dxt1},
++    {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT1,            convert_x8r8g8b8_dxt1},
++    {WINED3DFMT_B5G5R5A1_UNORM, WINED3DFMT_DXT1,            convert_a1r5g5b5_dxt1},
++    {WINED3DFMT_B5G5R5X1_UNORM, WINED3DFMT_DXT1,            convert_x1r5g5b5_dxt1},
++    {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_DXT3,            convert_a8r8g8b8_dxt3},
++    {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT3,            convert_x8r8g8b8_dxt3},
++    {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_DXT5,            convert_a8r8g8b8_dxt5},
++    {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT5,            convert_x8r8g8b8_dxt5}
++};
++
+ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_format_id from,
+         enum wined3d_format_id to)
+ {
+@@ -2359,6 +2532,12 @@ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_fo
+             return &converters[i];
+     }
+ 
++    for (i = 0; i < (sizeof(dxtn_converters) / sizeof(*dxtn_converters)); ++i)
++    {
++        if (dxtn_converters[i].from == from && dxtn_converters[i].to == to)
++            return wined3d_dxtn_supported() ? &dxtn_converters[i] : NULL;
++    }
++
+     return NULL;
+ }
+ 
+@@ -2604,7 +2783,8 @@ HRESULT CDECL wined3d_surface_map(struct wined3d_surface *surface,
+     if (fmt_flags & WINED3DFMT_FLAG_BROKEN_PITCH)
+         map_desc->row_pitch = surface->resource.width * format->byte_count;
+     else
+-        map_desc->row_pitch = wined3d_surface_get_pitch(surface);
++ /*       map_desc->row_pitch = wined3d_surface_get_pitch(surface); */
++      wined3d_resource_get_pitch(&surface->resource, &map_desc->row_pitch, &map_desc->slice_pitch);
+     map_desc->slice_pitch = surface->resource.height * map_desc->row_pitch;
+ 
+     if (!box)
+@@ -2753,6 +2933,7 @@ static void read_from_framebuffer(struct wined3d_surface *surface,
+     int i;
+     BOOL srcIsUpsideDown;
+     struct wined3d_bo_address data;
++    DWORD slice_pitch, pitch;
+ 
+     surface_get_memory(surface, &data, dst_location);
+ 
+@@ -2794,8 +2975,8 @@ static void read_from_framebuffer(struct wined3d_surface *surface,
+     }
+ 
+     /* Setup pixel store pack state -- to glReadPixels into the correct place */
+-    gl_info->gl_ops.gl.p_glPixelStorei(GL_PACK_ROW_LENGTH,
+-            wined3d_surface_get_pitch(surface) / surface->resource.format->byte_count);
++    wined3d_resource_get_pitch(&surface->resource, &pitch, &slice_pitch);
++    gl_info->gl_ops.gl.p_glPixelStorei(GL_PACK_ROW_LENGTH, pitch / surface->resource.format->byte_count);
+     checkGLcall("glPixelStorei");
+ 
+     gl_info->gl_ops.gl.p_glReadPixels(0, 0,
+@@ -2812,8 +2993,6 @@ static void read_from_framebuffer(struct wined3d_surface *surface,
+     {
+         /* glReadPixels returns the image upside down, and there is no way to prevent this.
+          * Flip the lines in software. */
+-        UINT pitch = wined3d_surface_get_pitch(surface);
+-
+         if (!(row = HeapAlloc(GetProcessHeap(), 0, pitch)))
+             goto error;
+ 
+@@ -2874,7 +3053,6 @@ void surface_load_fb_texture(struct wined3d_surface *surface, BOOL srgb, struct
+     gl_info = context->gl_info;
+     device_invalidate_state(device, STATE_FRAMEBUFFER);
+ 
+-    wined3d_texture_prepare_texture(surface->container, context, srgb);
+     wined3d_texture_bind_and_dirtify(surface->container, context, srgb);
+ 
+     TRACE("Reading back offscreen render target %p.\n", surface);
+@@ -3749,6 +3927,7 @@ void surface_load_ds_location(struct wined3d_surface *surface, struct wined3d_co
+         gl_info->gl_ops.gl.p_glTexParameteri(bind_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+         gl_info->gl_ops.gl.p_glTexParameteri(bind_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+         gl_info->gl_ops.gl.p_glTexParameteri(bind_target, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
++//        gl_info->gl_ops.gl.p_glTexParameteri(bind_target, GL_DEPTH_TEXTURE_MODE_ARB, GL_LUMINANCE); //Slice -?
+         gl_info->gl_ops.gl.p_glBindTexture(bind_target, old_binding);
+ 
+         context_apply_fbo_state_blit(context, GL_FRAMEBUFFER,
+@@ -3932,7 +4111,8 @@ static HRESULT surface_load_texture(struct wined3d_surface *surface,
+     struct wined3d_device *device = surface->resource.device;
+     const struct wined3d_color_key_conversion *conversion;
+     struct wined3d_texture *texture = surface->container;
+-    UINT width, src_pitch, dst_pitch;
++//    UINT width, src_pitch, dst_pitch;
++    UINT width, src_row_pitch, src_slice_pitch, dst_pitch;
+     struct wined3d_bo_address data;
+     struct wined3d_format format;
+     POINT dst_point = {0, 0};
+@@ -4017,7 +4197,8 @@ static HRESULT surface_load_texture(struct wined3d_surface *surface,
+     wined3d_texture_bind_and_dirtify(texture, context, srgb);
+ 
+     width = surface->resource.width;
+-    src_pitch = wined3d_surface_get_pitch(surface);
++//    src_pitch = wined3d_surface_get_pitch(surface);
++    wined3d_resource_get_pitch(&surface->resource, &src_row_pitch, &src_slice_pitch);    
+ 
+     format = *texture->resource.format;
+     if ((conversion = wined3d_format_get_color_key_conversion(texture, TRUE)))
+@@ -4055,9 +4236,9 @@ static HRESULT surface_load_texture(struct wined3d_surface *surface,
+             context_release(context);
+             return E_OUTOFMEMORY;
+         }
+-        format.convert(data.addr, mem, src_pitch, src_pitch * height,
++        format.convert(data.addr, mem, src_row_pitch, src_row_pitch * height,
+                 dst_pitch, dst_pitch * height, width, height, 1);
+-        src_pitch = dst_pitch;
++        src_row_pitch = dst_pitch;
+         data.addr = mem;
+     }
+     else if (conversion)
+@@ -4077,14 +4258,14 @@ static HRESULT surface_load_texture(struct wined3d_surface *surface,
+         }
+         if (texture->swapchain && texture->swapchain->palette)
+             palette = texture->swapchain->palette;
+-        conversion->convert(data.addr, src_pitch, mem, dst_pitch,
++        conversion->convert(data.addr, src_row_pitch, mem, dst_pitch,
+                 width, height, palette, &texture->async.gl_color_key);
+-        src_pitch = dst_pitch;
++        src_row_pitch = dst_pitch;
+         data.addr = mem;
+     }
+ 
+     wined3d_surface_upload_data(surface, gl_info, &format, &src_rect,
+-            src_pitch, &dst_point, srgb, wined3d_const_bo_address(&data));
++            src_row_pitch, &dst_point, srgb, wined3d_const_bo_address(&data));
+ 
+     HeapFree(GetProcessHeap(), 0, mem);
+ 
+@@ -4476,6 +4664,8 @@ static HRESULT surface_cpu_blt_compressed(const BYTE *src_data, BYTE *dst_data,
+ 
+             case WINED3DFMT_DXT2:
+             case WINED3DFMT_DXT3:
++            case WINED3DFMT_DXT4:
++            case WINED3DFMT_DXT5:
+                 for (y = 0; y < update_h; y += format->block_height)
+                 {
+                     struct block
+@@ -5104,6 +5294,13 @@ HRESULT CDECL wined3d_surface_blt(struct wined3d_surface *dst_surface, const REC
+     }
+ 
+     surface_get_rect(dst_surface, dst_rect_in, &dst_rect);
++    //Slice - make clipping
++    if (dst_rect.top > dst_surface->resource.height) {
++        dst_rect.top = dst_surface->resource.height;
++    }
++    if (dst_rect.right > dst_surface->resource.width) {
++        dst_rect.right = dst_surface->resource.width;
++    }
+ 
+     if (dst_rect.left >= dst_rect.right || dst_rect.top >= dst_rect.bottom
+             || dst_rect.left > dst_surface->resource.width || dst_rect.left < 0
+@@ -5118,6 +5315,12 @@ HRESULT CDECL wined3d_surface_blt(struct wined3d_surface *dst_surface, const REC
+     if (src_surface)
+     {
+         surface_get_rect(src_surface, src_rect_in, &src_rect);
++        if (src_rect.top > src_surface->resource.height) {
++            src_rect.top = src_surface->resource.height;
++        }
++        if (src_rect.right > src_surface->resource.width) {
++            src_rect.right = src_surface->resource.width;
++        }
+ 
+         if (src_rect.left >= src_rect.right || src_rect.top >= src_rect.bottom
+                 || src_rect.left > src_surface->resource.width || src_rect.left < 0
+@@ -5204,6 +5407,11 @@ HRESULT CDECL wined3d_surface_blt(struct wined3d_surface *dst_surface, const REC
+             && (src_rect.right - src_rect.left != dst_rect.right - dst_rect.left
+             || src_rect.bottom - src_rect.top != dst_rect.bottom - dst_rect.top);
+     convert = src_surface && src_surface->resource.format->id != dst_surface->resource.format->id;
++    //Slice - make condition if we want cpu_blt for compressed texture
++ /*   if (src_surface->resource.format_flags & WINED3DFMT_FLAG_COMPRESSED) {
++        FIXME("only cpu blt for compressed textures\n");
++        goto cpu;
++    } */
+ 
+     dst_ds_flags = dst_surface->container->resource.format_flags
+             & (WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_STENCIL);
+@@ -5388,6 +5599,12 @@ static HRESULT surface_init(struct wined3d_surface *surface, struct wined3d_text
+     unsigned int resource_size;
+     HRESULT hr;
+ 
++    if (multisample_quality > 0)
++    {
++        FIXME("multisample_quality set to %u, substituting 0.\n", multisample_quality);
++        multisample_quality = 0;
++    }
++
+     /* Quick lockable sanity check.
+      * TODO: remove this after surfaces, usage and lockability have been debugged properly
+      * this function is too deep to need to care about things like this.
+@@ -5444,7 +5661,8 @@ static HRESULT surface_init(struct wined3d_surface *surface, struct wined3d_text
+     /* Flags */
+     if (flags & WINED3D_SURFACE_DISCARD)
+         surface->flags |= SFLAG_DISCARD;
+-    if (lockable || desc->format == WINED3DFMT_D16_LOCKABLE)
++    if (lockable || desc->format == WINED3DFMT_D16_LOCKABLE ||
++        desc->format == WINED3DFMT_D32_LOCKABLE || desc->format == WINED3DFMT_S8_LOCKABLE)
+         surface->resource.access_flags |= WINED3D_RESOURCE_ACCESS_CPU;
+ 
+     surface->texture_target = target;
+diff --git a/dlls/wined3d/swapchain.c b/dlls/wined3d/swapchain.c
+index e45fe17..c5737aa 100644
+--- a/dlls/wined3d/swapchain.c
++++ b/dlls/wined3d/swapchain.c
+@@ -136,12 +136,17 @@ HRESULT CDECL wined3d_swapchain_present(struct wined3d_swapchain *swapchain,
+         const RECT *src_rect, const RECT *dst_rect, HWND dst_window_override,
+         const RGNDATA *dirty_region, DWORD flags)
+ {
++    static DWORD notified_flags = 0;
++
+     TRACE("swapchain %p, src_rect %s, dst_rect %s, dst_window_override %p, dirty_region %p, flags %#x.\n",
+             swapchain, wine_dbgstr_rect(src_rect), wine_dbgstr_rect(dst_rect),
+             dst_window_override, dirty_region, flags);
+ 
+-    if (flags)
+-        FIXME("Ignoring flags %#x.\n", flags);
++    if (flags & ~notified_flags)
++    {
++        FIXME("Ignoring flags %#x.\n", flags & ~notified_flags);
++        notified_flags |= flags;
++    }
+ 
+     if (!swapchain->back_buffers)
+     {
+@@ -254,8 +259,10 @@ HRESULT CDECL wined3d_swapchain_set_gamma_ramp(const struct wined3d_swapchain *s
+ 
+     TRACE("swapchain %p, flags %#x, ramp %p.\n", swapchain, flags, ramp);
+ 
+-    if (flags)
+-        FIXME("Ignoring flags %#x.\n", flags);
++    if (flags) {
++        FIXME("Ignoring flags %#x.\n", flags); //D3DSGR_CALIBRATE //Slice-todo
++        return WINED3D_OK;
++    }
+ 
+     dc = GetDC(swapchain->device_window);
+     SetDeviceGammaRamp(dc, (void *)ramp);
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index 1d5bec7..ddf7895 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -571,8 +579,8 @@ HRESULT CDECL wined3d_texture_set_color_key(struct wined3d_texture *texture,
+         DWORD flags, const struct wined3d_color_key *color_key)
+ {
+     struct wined3d_device *device = texture->resource.device;
+-    static const DWORD all_flags = WINED3D_CKEY_DST_BLT | WINED3D_CKEY_DST_OVERLAY
+-            | WINED3D_CKEY_SRC_BLT | WINED3D_CKEY_SRC_OVERLAY;
++    static const DWORD all_flags = WINED3D_CKEY_COLORSPACE | WINED3D_CKEY_DST_BLT
++            | WINED3D_CKEY_DST_OVERLAY | WINED3D_CKEY_SRC_BLT | WINED3D_CKEY_SRC_OVERLAY;
+ 
+     TRACE("texture %p, flags %#x, color_key %p.\n", texture, flags, color_key);
+ 
+@@ -582,6 +590,13 @@ HRESULT CDECL wined3d_texture_set_color_key(struct wined3d_texture *texture,
+         return WINED3DERR_INVALIDCALL;
+     }
+ 
++    if (flags & WINED3D_CKEY_COLORSPACE)
++    {
++        //Slice 0x9 = WINED3D_CKEY_SRC_BLT | WINED3D_CKEY_COLORSPACE
++        FIXME("Unhandled flags %#x.\n", flags);
++        return WINED3DERR_INVALIDCALL;
++    }
++
+     wined3d_cs_emit_set_color_key(device->cs, texture, flags, color_key);
+ 
+     return WINED3D_OK;
+@@ -782,13 +797,21 @@ static void texture2d_sub_resource_add_dirty_region(struct wined3d_resource *sub
+ static void texture2d_sub_resource_cleanup(struct wined3d_resource *sub_resource)
+ {
+     struct wined3d_surface *surface = surface_from_resource(sub_resource);
+-
++  //Slice
++  if (!surface) {
++    ERR("no surface\n");
++    return;
++  }
+     wined3d_surface_destroy(surface);
+ }
+ 
+ static void texture2d_sub_resource_invalidate_location(struct wined3d_resource *sub_resource, DWORD location)
+ {
+     struct wined3d_surface *surface = surface_from_resource(sub_resource);
++  if (!surface) {
++    ERR("no surface\n");
++    return;
++  }
+ 
+     surface_invalidate_location(surface, location);
+ }
+@@ -796,6 +819,10 @@ static void texture2d_sub_resource_invalidate_location(struct wined3d_resource *
+ static void texture2d_sub_resource_validate_location(struct wined3d_resource *sub_resource, DWORD location)
+ {
+     struct wined3d_surface *surface = surface_from_resource(sub_resource);
++  if (!surface) {
++    ERR("no surface\n");
++    return;
++  }
+ 
+     surface_validate_location(surface, location);
+ }
+@@ -807,6 +834,10 @@ static void texture2d_sub_resource_upload_data(struct wined3d_resource *sub_reso
+     static const POINT dst_point = {0, 0};
+     struct wined3d_const_bo_address addr;
+     RECT src_rect;
++  if (!surface) {
++    ERR("no surface\n");
++    return;
++  }
+ 
+     src_rect.left = 0;
+     src_rect.top = 0;
+@@ -1244,13 +1293,24 @@ static void texture3d_sub_resource_add_dirty_region(struct wined3d_resource *sub
+ static void texture3d_sub_resource_cleanup(struct wined3d_resource *sub_resource)
+ {
+     struct wined3d_volume *volume = volume_from_resource(sub_resource);
+-
++  //Slice
++  if (!volume) {
++    ERR("no sub-volume\n");
++    return;
++  }
++  TRACE("volume %p destroy\n", volume);
++  //trace:d3d_texture:texture3d_sub_resource_cleanup volume 0x70f1c60 destroy
+     wined3d_volume_destroy(volume);
+ }
+ 
+ static void texture3d_sub_resource_invalidate_location(struct wined3d_resource *sub_resource, DWORD location)
+ {
+     struct wined3d_volume *volume = volume_from_resource(sub_resource);
++  //Slice
++  if (!volume) {
++    ERR("no sub-volume\n");
++    return;
++  }
+ 
+     wined3d_volume_invalidate_location(volume, location);
+ }
+@@ -1258,6 +1318,11 @@ static void texture3d_sub_resource_invalidate_location(struct wined3d_resource *
+ static void texture3d_sub_resource_validate_location(struct wined3d_resource *sub_resource, DWORD location)
+ {
+     struct wined3d_volume *volume = volume_from_resource(sub_resource);
++  //Slice
++  if (!volume) {
++    ERR("no sub-volume\n");
++    return;
++  }
+ 
+     wined3d_volume_validate_location(volume, location);
+ }
+@@ -1268,8 +1333,13 @@ static void texture3d_sub_resource_upload_data(struct wined3d_resource *sub_reso
+     struct wined3d_volume *volume = volume_from_resource(sub_resource);
+     struct wined3d_const_bo_address addr;
+     unsigned int row_pitch, slice_pitch;
++  //Slice
++  if (!volume) {
++    ERR("no sub-volume\n");
++    return;
++  }
+ 
+-    wined3d_volume_get_pitch(volume, &row_pitch, &slice_pitch);
++    wined3d_resource_get_pitch(sub_resource, &row_pitch, &slice_pitch);
+     if (row_pitch != data->row_pitch || slice_pitch != data->slice_pitch)
+         FIXME("Ignoring row/slice pitch (%u/%u).\n", data->row_pitch, data->slice_pitch);
+ 
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 17ac29d..f84ddc5 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -201,11 +206,11 @@ struct wined3d_format_block_info
+ 
+ static const struct wined3d_format_block_info format_block_info[] =
+ {
+-    {WINED3DFMT_DXT1,   4,  4,  8,  TRUE},
+-    {WINED3DFMT_DXT2,   4,  4,  16, TRUE},
+-    {WINED3DFMT_DXT3,   4,  4,  16, TRUE},
+-    {WINED3DFMT_DXT4,   4,  4,  16, TRUE},
+-    {WINED3DFMT_DXT5,   4,  4,  16, TRUE},
++    {WINED3DFMT_DXT1,   4,  4,  8,  FALSE}, //TRUE},
++    {WINED3DFMT_DXT2,   4,  4,  16, FALSE}, //TRUE},
++    {WINED3DFMT_DXT3,   4,  4,  16, FALSE}, //TRUE},
++    {WINED3DFMT_DXT4,   4,  4,  16, FALSE}, //TRUE},
++    {WINED3DFMT_DXT5,   4,  4,  16, FALSE}, //TRUE},
+     {WINED3DFMT_ATI1N,  4,  4,  8,  FALSE},
+     {WINED3DFMT_ATI2N,  4,  4,  16, FALSE},
+     {WINED3DFMT_YUY2,   2,  1,  4,  FALSE},
+@@ -2256,13 +2308,13 @@ static BOOL init_format_texture_info(struct wined3d_adapter *adapter, struct win
+ 
+ static BOOL color_match(DWORD c1, DWORD c2, BYTE max_diff)
+ {
+-    if (abs((c1 & 0xff) - (c2 & 0xff)) > max_diff) return FALSE;
++    if (abs((int)(c1 & 0xff) - (int)(c2 & 0xff)) > max_diff) return FALSE;
+     c1 >>= 8; c2 >>= 8;
+-    if (abs((c1 & 0xff) - (c2 & 0xff)) > max_diff) return FALSE;
++    if (abs((int)(c1 & 0xff) - (int)(c2 & 0xff)) > max_diff) return FALSE;
+     c1 >>= 8; c2 >>= 8;
+-    if (abs((c1 & 0xff) - (c2 & 0xff)) > max_diff) return FALSE;
++    if (abs((int)(c1 & 0xff) - (int)(c2 & 0xff)) > max_diff) return FALSE;
+     c1 >>= 8; c2 >>= 8;
+-    if (abs((c1 & 0xff) - (c2 & 0xff)) > max_diff) return FALSE;
++    if (abs((int)(c1 & 0xff) - (int)(c2 & 0xff)) > max_diff) return FALSE;
+     return TRUE;
+ }
+ 
+@@ -2638,6 +2690,7 @@ static void apply_format_fixups(struct wined3d_adapter *adapter, struct wined3d_
+      *
+      * Note that GL_NV_texture_compression_vtc adds this functionality to OpenGL, but the
+      * block layout is not compatible with the one used by d3d. See volume_dxt5_test. */
++     if (gl_info->quirks & WINED3D_QUIRK_NO_DXTN) {
+     idx = getFmtIdx(WINED3DFMT_DXT1);
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+     idx = getFmtIdx(WINED3DFMT_DXT2);
+@@ -2648,6 +2701,7 @@ static void apply_format_fixups(struct wined3d_adapter *adapter, struct wined3d_
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+     idx = getFmtIdx(WINED3DFMT_DXT5);
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
++    }
+     /* Similarly with ATI1N / ATI2N and GL_ARB_texture_compression_rgtc. */
+     idx = getFmtIdx(WINED3DFMT_ATI1N);
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+@@ -2821,8 +2875,12 @@ const struct wined3d_format *wined3d_get_format(const struct wined3d_gl_info *gl
+ 
+     if (idx == -1)
+     {
++        static enum wined3d_format_id old_id;
++        if (old_id != format_id) {
++            old_id = format_id;
+         FIXME("Can't find format %s (%#x) in the format lookup table\n",
+                 debug_d3dformat(format_id), format_id);
++        }
+         /* Get the caller a valid pointer */
+         idx = getFmtIdx(WINED3DFMT_UNKNOWN);
+     }
+@@ -2834,10 +2892,10 @@ UINT wined3d_format_calculate_pitch(const struct wined3d_format *format, UINT wi
+ {
+     /* For block based formats, pitch means the amount of bytes to the next
+      * row of blocks rather than the next row of pixels. */
+-    if (format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_BLOCKS)
++    //    if (format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_BLOCKS)
+         return format->block_byte_count * ((width + format->block_width - 1) / format->block_width);
+ 
+-    return format->byte_count * width;
++    //return format->byte_count * width; //it's the same for non-block but not for TEX_3D
+ }
+ 
+ UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT alignment,
+@@ -2850,15 +2908,15 @@ UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT ali
+     {
+         size = 0;
+     }
+-    else if (format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_BLOCKS)
++    else //if (format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_BLOCKS)
+     {
+         UINT row_count = (height + format->block_height - 1) / format->block_height;
+         size = row_count * ((pitch + alignment - 1) & ~(alignment - 1));
+-    }
++    } /*
+     else
+     {
+         size = height * ((pitch + alignment - 1) & ~(alignment - 1));
+-    }
++    }*/
+ 
+     if (format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_HEIGHT_SCALE)
+     {
+@@ -3053,7 +3152,7 @@ const char *debug_d3ddevicetype(enum wined3d_device_type device_type)
+ 
+ const char *debug_d3dusage(DWORD usage)
+ {
+-    char buf[333];
++    char buf[433];
+ 
+     buf[0] = '\0';
+ #define WINED3DUSAGE_TO_STR(u) if (usage & u) { strcat(buf, " | "#u); usage &= ~u; }
+@@ -3070,8 +3169,9 @@ const char *debug_d3dusage(DWORD usage)
+     WINED3DUSAGE_TO_STR(WINED3DUSAGE_DMAP);
+     WINED3DUSAGE_TO_STR(WINED3DUSAGE_STATICDECL);
+     WINED3DUSAGE_TO_STR(WINED3DUSAGE_OVERLAY);
++    WINED3DUSAGE_TO_STR(WINED3DUSAGE_TEXTURE);
+ #undef WINED3DUSAGE_TO_STR
+-    if (usage) FIXME("Unrecognized usage flag(s) %#x\n", usage);
++    if (usage & ~WINED3DUSAGE_QUERY_MASK) FIXME("Unrecognized usage flag(s) %#x\n", usage);
+ 
+     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
+ }
+@@ -3090,7 +3190,7 @@ const char *debug_d3dusagequery(DWORD usagequery)
+     WINED3DUSAGEQUERY_TO_STR(WINED3DUSAGE_QUERY_VERTEXTEXTURE);
+     WINED3DUSAGEQUERY_TO_STR(WINED3DUSAGE_QUERY_WRAPANDMIP);
+ #undef WINED3DUSAGEQUERY_TO_STR
+-    if (usagequery) FIXME("Unrecognized usage query flag(s) %#x\n", usagequery);
++    if (usagequery & WINED3DUSAGE_QUERY_MASK) FIXME("Unrecognized usage query flag(s) %#x\n", usagequery);
+ 
+     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
+ }
+@@ -4959,7 +5138,8 @@ const char *wined3d_debug_location(DWORD location)
+     LOCATION_TO_STR(WINED3D_LOCATION_RB_MULTISAMPLE);
+     LOCATION_TO_STR(WINED3D_LOCATION_RB_RESOLVED);
+ #undef LOCATION_TO_STR
+-    if (location) FIXME("Unrecognized location flag(s) %#x.\n", location);
++ //   if (location) FIXME("Unrecognized location flag(s) %#x.\n", location);
++  //Unrecognized location flag(s) 0xfffffc00.
+ 
+     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
+ }
+diff --git a/dlls/wined3d/vertexdeclaration.c b/dlls/wined3d/vertexdeclaration.c
+index 9eb5907..90c97ea 100644
+--- a/dlls/wined3d/vertexdeclaration.c
++++ b/dlls/wined3d/vertexdeclaration.c
+@@ -124,6 +133,7 @@ static BOOL declaration_element_valid_ffp(const struct wined3d_vertex_element *e
+             }
+ 
+         case WINED3D_DECL_USAGE_TEXCOORD:
++        case WINED3D_DECL_USAGE_PSIZE:  //Slice
+             switch(element->format)
+             {
+                 case WINED3DFMT_R32_FLOAT:
+diff --git a/dlls/wined3d/volume.c b/dlls/wined3d/volume.c
+index 0231c23..e08a150 100644
+--- a/dlls/wined3d/volume.c
++++ b/dlls/wined3d/volume.c
+@@ -40,6 +40,7 @@ BOOL volume_prepare_system_memory(struct wined3d_volume *volume)
+     return TRUE;
+ }
+ 
++#if 0 
+ void wined3d_volume_get_pitch(const struct wined3d_volume *volume, UINT *row_pitch, UINT *slice_pitch)
+ {
+     const struct wined3d_format *format = volume->resource.format;
+@@ -64,6 +65,7 @@ void wined3d_volume_get_pitch(const struct wined3d_volume *volume, UINT *row_pit
+     TRACE("Returning row pitch %u, slice pitch %u.\n", *row_pitch, *slice_pitch);
+ }
+ 
++#endif
+ /* This call just uploads data, the caller is responsible for binding the
+  * correct texture. */
+ /* Context activation is done by the caller. */
+@@ -82,7 +84,7 @@ void wined3d_volume_upload_data(struct wined3d_volume *volume, const struct wine
+             volume, context, volume->texture_level, debug_d3dformat(format->id),
+             format->id);
+ 
+-    if (format->convert)
++    if (format->convert) //this is conversion for destination format
+     {
+         UINT dst_row_pitch, dst_slice_pitch;
+         UINT src_row_pitch, src_slice_pitch;
+@@ -95,7 +97,7 @@ void wined3d_volume_upload_data(struct wined3d_volume *volume, const struct wine
+         dst_row_pitch = width * format->conv_byte_count;
+         dst_slice_pitch = dst_row_pitch * height;
+ 
+-        wined3d_volume_get_pitch(volume, &src_row_pitch, &src_slice_pitch);
++        wined3d_resource_get_pitch(&volume->resource, &src_row_pitch, &src_slice_pitch);
+ 
+         converted_mem = HeapAlloc(GetProcessHeap(), 0, dst_slice_pitch * depth);
+         format->convert(data->addr, converted_mem, src_row_pitch, src_slice_pitch,
+@@ -132,7 +134,7 @@ void wined3d_volume_validate_location(struct wined3d_volume *volume, DWORD locat
+ 
+ void wined3d_volume_invalidate_location(struct wined3d_volume *volume, DWORD location)
+ {
+-    TRACE("Volume %p, clearing %s.\n", volume, wined3d_debug_location(location));
++//    TRACE("Volume %p, clearing %s.\n", volume, wined3d_debug_location(location));
+     volume->locations &= ~location;
+     TRACE("new location flags are %s.\n", wined3d_debug_location(volume->locations));
+ }
+@@ -610,7 +612,8 @@ HRESULT wined3d_volume_map(struct wined3d_volume *volume,
+     }
+     else
+     {
+-        wined3d_volume_get_pitch(volume, &map_desc->row_pitch, &map_desc->slice_pitch);
++ //       wined3d_volume_get_pitch(volume, &map_desc->row_pitch, &map_desc->slice_pitch);
++      wined3d_resource_get_pitch(&volume->resource, &map_desc->row_pitch, &map_desc->slice_pitch);
+     }
+ 
+     if (!box)
+diff --git a/dlls/wined3d/wined3d.spec b/dlls/wined3d/wined3d.spec
+index a7e625d..2218d4c 100644
+--- a/dlls/wined3d/wined3d.spec
++++ b/dlls/wined3d/wined3d.spec
+@@ -181,6 +181,7 @@
+ 
+ @ cdecl wined3d_resource_get_desc(ptr ptr)
+ @ cdecl wined3d_resource_get_parent(ptr)
++@ cdecl wined3d_resource_get_pitch(ptr ptr ptr)
+ @ cdecl wined3d_resource_get_priority(ptr)
+ @ cdecl wined3d_resource_map(ptr long ptr ptr long)
+ @ cdecl wined3d_resource_set_parent(ptr ptr)
+@@ -227,7 +228,6 @@
+ @ cdecl wined3d_surface_from_resource(ptr)
+ @ cdecl wined3d_surface_get_overlay_position(ptr ptr ptr)
+ @ cdecl wined3d_surface_get_parent(ptr)
+-@ cdecl wined3d_surface_get_pitch(ptr)
+ @ cdecl wined3d_surface_get_resource(ptr)
+ @ cdecl wined3d_surface_getdc(ptr ptr)
+ @ cdecl wined3d_surface_incref(ptr)
+@@ -283,3 +283,11 @@
+ @ cdecl wined3d_vertex_declaration_decref(ptr)
+ @ cdecl wined3d_vertex_declaration_get_parent(ptr)
+ @ cdecl wined3d_vertex_declaration_incref(ptr)
++
++@ cdecl wined3d_dxtn_supported()
++@ cdecl wined3d_dxt1_decode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt1_encode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt3_decode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt3_encode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt5_decode(ptr ptr long long long long long)
++@ cdecl wined3d_dxt5_encode(ptr ptr long long long long long)
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index a60919e..da7a4b6 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -2354,7 +2385,7 @@ BOOL volume_prepare_system_memory(struct wined3d_volume *volume) DECLSPEC_HIDDEN
+ HRESULT wined3d_volume_create(struct wined3d_texture *container, const struct wined3d_resource_desc *desc,
+         unsigned int level, struct wined3d_volume **volume) DECLSPEC_HIDDEN;
+ void wined3d_volume_destroy(struct wined3d_volume *volume) DECLSPEC_HIDDEN;
+-void wined3d_volume_get_pitch(const struct wined3d_volume *volume, UINT *row_pitch, UINT *slice_pitch) DECLSPEC_HIDDEN;
++//void wined3d_volume_get_pitch(const struct wined3d_volume *volume, UINT *row_pitch, UINT *slice_pitch) DECLSPEC_HIDDEN;
+ void wined3d_volume_load(struct wined3d_volume *volume, struct wined3d_context *context,
+         BOOL srgb_mode) DECLSPEC_HIDDEN;
+ void wined3d_volume_invalidate_location(struct wined3d_volume *volume, DWORD location) DECLSPEC_HIDDEN;
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+index 3a80f1d..704c922 100644
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -729,11 +729,12 @@ - (NSArray*)modesMatchingMode:(CGDisplayModeRef)mode forDisplay:(CGDirectDisplay
+         NSDictionary* options = nil;
+ 
+ #if defined(MAC_OS_X_VERSION_10_8) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
++#if defined(kCGDisplayShowDuplicateLowResolutionModes)
+         if (&kCGDisplayShowDuplicateLowResolutionModes != NULL)
+             options = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:TRUE]
+                                                   forKey:(NSString*)kCGDisplayShowDuplicateLowResolutionModes];
+ #endif
+-
++#endif
+         NSArray *modes = [(NSArray*)CGDisplayCopyAllDisplayModes(displayID, (CFDictionaryRef)options) autorelease];
+         for (id candidateModeObject in modes)
+         {
+diff --git a/dlls/winemac.drv/display.c b/dlls/winemac.drv/display.c
+index ad01191..1eb518f 100644
+--- a/dlls/winemac.drv/display.c
++++ b/dlls/winemac.drv/display.c
+@@ -18,7 +18,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #include "config.h"
+ 
+ #include "macdrv.h"
+@@ -553,6 +553,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
+     CFArrayRef modes = NULL;
+ 
+ #if defined(MAC_OS_X_VERSION_10_8) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
++#ifdef kCGDisplayShowDuplicateLowResolutionModes
+     if (&kCGDisplayShowDuplicateLowResolutionModes != NULL &&
+         CGDisplayModeGetPixelWidth != NULL && CGDisplayModeGetPixelHeight != NULL)
+     {
+@@ -661,6 +662,7 @@ static CFArrayRef copy_display_modes(CGDirectDisplayID display)
+     }
+     else
+ #endif
++#endif
+         modes = CGDisplayCopyAllDisplayModes(display, NULL);
+ 
+     return modes;
+@@ -681,9 +683,9 @@ LONG CDECL macdrv_ChangeDisplaySettingsEx(LPCWSTR devname, LPDEVMODEW devmode,
+     struct macdrv_display *displays;
+     int num_displays;
+     CFArrayRef display_modes;
+-    CFIndex count, i, safe, best;
++    CFIndex count, i, safe, best = 0;
+     CGDisplayModeRef best_display_mode;
+-    uint32_t best_io_flags;
++    uint32_t best_io_flags = 0;
+ 
+     TRACE("%s %p %p 0x%08x %p\n", debugstr_w(devname), devmode, hwnd, flags, lpvoid);
+ 
+@@ -942,7 +944,7 @@ BOOL CDECL macdrv_EnumDisplaySettingsEx(LPCWSTR devname, DWORD mode,
+     struct macdrv_display *displays = NULL;
+     int num_displays;
+     CGDisplayModeRef display_mode;
+-    int display_mode_bpp;
++    int display_mode_bpp = 24;
+     BOOL synthesized = FALSE;
+     double rotation;
+     uint32_t io_flags;
+@@ -1215,6 +1217,7 @@ BOOL CDECL macdrv_GetMonitorInfo(HMONITOR monitor, LPMONITORINFO info)
+     int num_displays;
+     CGDirectDisplayID display_id;
+     int i;
++  BOOL unique_monitor_names = TRUE;
+ 
+     TRACE("%p, %p\n", monitor, info);
+ 
+diff --git a/include/d3dx9tex.h b/include/d3dx9tex.h
+index 542460f..fbe8ae6 100644
+--- a/include/d3dx9tex.h
++++ b/include/d3dx9tex.h
+@@ -185,6 +185,8 @@ HRESULT WINAPI D3DXSaveVolumeToFileA(const char *destfile, D3DXIMAGE_FILEFORMAT
+         struct IDirect3DVolume9 *srcvolume, const PALETTEENTRY *srcpalette, const D3DBOX *srcbox);
+ HRESULT WINAPI D3DXSaveVolumeToFileW(const WCHAR *destfile, D3DXIMAGE_FILEFORMAT destformat,
+         struct IDirect3DVolume9 *srcvolume, const PALETTEENTRY *srcpalette, const D3DBOX *srcbox);
++HRESULT WINAPI D3DXSaveVolumeToFileInMemory(ID3DXBuffer **dst_buffer, D3DXIMAGE_FILEFORMAT file_format,
++        struct IDirect3DVolume9 *srcvolume, const PALETTEENTRY *srcpalette, const D3DBOX *srcbox);
+ #define D3DXSaveVolumeToFile WINELIB_NAME_AW(D3DXSaveVolumeToFile)
+ 
+ 
+diff --git a/include/wine/wgl_driver.h b/include/wine/wgl_driver.h
+index c52185d..046b604 100644
+--- a/include/wine/wgl_driver.h
++++ b/include/wine/wgl_driver.h
+@@ -2903,6 +2903,8 @@ struct opengl_funcs
+         BOOL       (WINE_GLAPI *p_wglSetPbufferAttribARB)(struct wgl_pbuffer *,const int*);
+         BOOL       (WINE_GLAPI *p_wglSetPixelFormatWINE)(HDC,int);
+         BOOL       (WINE_GLAPI *p_wglSwapIntervalEXT)(int);
++        BOOL       (WINE_GLAPI *p_wglGetPCIInfoWINE)(unsigned int *, unsigned int *);
++        BOOL       (WINE_GLAPI *p_wglGetMemoryInfoWINE)(unsigned int *);
+     } ext;
+ };
+ 
+diff --git a/include/wine/wined3d.h b/include/wine/wined3d.h
+index 2deb450..aeb5e62 100644
+--- a/include/wine/wined3d.h
++++ b/include/wine/wined3d.h
+@@ -22,7 +22,7 @@
+  * License along with this library; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+-
++//Slice 2015
+ #ifndef __WINE_WINED3D_H
+ #define __WINE_WINED3D_H
+ 
+@@ -1244,6 +1256,7 @@ enum wined3d_display_rotation
+ 
+ #define WINED3D_RESZ_CODE                                       0x7fa05000
+ 
++#define WINED3D_CKEY_COLORSPACE                                 0x00000001
+ #define WINED3D_CKEY_DST_BLT                                    0x00000002
+ #define WINED3D_CKEY_DST_OVERLAY                                0x00000004
+ #define WINED3D_CKEY_SRC_BLT                                    0x00000008
+@@ -2018,6 +2031,7 @@ struct wined3d_surface;
+ struct wined3d_swapchain;
+ struct wined3d_texture;
+ struct wined3d_vertex_declaration;
++struct wined3d_volume;
+ 
+ struct wined3d_device_parent
+ {
+@@ -2426,6 +2446,8 @@ HRESULT __cdecl wined3d_resource_map(struct wined3d_resource *resource, unsigned
+         struct wined3d_map_desc *map_desc, const struct wined3d_box *box, DWORD flags);
+ void __cdecl wined3d_resource_set_parent(struct wined3d_resource *resource, void *parent);
+ DWORD __cdecl wined3d_resource_set_priority(struct wined3d_resource *resource, DWORD priority);
++void __cdecl wined3d_resource_get_pitch(const struct wined3d_resource *resource, UINT *row_pitch,
++                                        UINT *slice_pitch);
+ HRESULT __cdecl wined3d_resource_unmap(struct wined3d_resource *resource, unsigned int sub_resource_idx);
+ 
+ HRESULT __cdecl wined3d_rendertarget_view_create(const struct wined3d_rendertarget_view_desc *desc,
+@@ -2601,4 +2635,20 @@ static inline unsigned int wined3d_log2i(unsigned int x)
+ #endif
+ }
+ 
++
++BOOL wined3d_dxt1_decode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt1_encode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt3_decode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt3_encode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt5_decode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxt5_encode(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out,
++                         enum wined3d_format_id format, unsigned int w, unsigned int h);
++BOOL wined3d_dxtn_supported(void);
++
++
+ #endif /* __WINE_WINED3D_H */
+diff --git a/libs/wine/Makefile.in b/libs/wine/Makefile.in
+index 1b7fea8..8207014 100644
+--- a/libs/wine/Makefile.in
++++ b/libs/wine/Makefile.in
+@@ -112,7 +112,7 @@ libwine_LDFLAGS = $(LIBWINE_LDFLAGS)
+ libwine_DEPS = $(LIBWINE_DEPENDS)
+ 
+ version.c: dummy
+-	version=`(GIT_DIR=$(top_srcdir)/.git git describe HEAD 2>/dev/null || echo "wine-$(PACKAGE_VERSION)") | sed -n -e '$$s/\(.*\)/const char wine_build[] = "\1";/p'` && (echo $$version | cmp -s - $@) || echo $$version >$@ || ($(RM) $@ && exit 1)
++	version=`(GIT_DIR=$(top_srcdir)/.git git describe HEAD 2>/dev/null || echo "wine-$(PACKAGE_VERSION)") | sed -n -e '$$s/\(.*\)/const char wine_build[] = "\1 (XSherry)";/p'` && (echo $$version | cmp -s - $@) || echo $$version >$@ || ($(RM) $@ && exit 1)
+ 
+ dummy:
+ .PHONY: dummy

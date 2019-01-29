@@ -1,0 +1,64 @@
+From 24a4bad5072501962cb97aaa782a013f2c714b8c Mon Sep 17 00:00:00 2001
+From: Christian Costa <titan.costa@gmail.com>
+Date: Sun, 28 Dec 2014 19:13:11 +0100
+Subject: ddraw: Disable clip-plane-update (partial revert of commit
+ 4a30db74b1dbad885941970e7caf9815abd7826d).
+
+---
+ dlls/ddraw/viewport.c | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/ddraw/viewport.c b/dlls/ddraw/viewport.c
+index f558678..f391d3b 100644
+--- a/dlls/ddraw/viewport.c
++++ b/dlls/ddraw/viewport.c
+@@ -77,6 +77,8 @@ void viewport_activate(struct d3d_viewport *This, BOOL ignore_lights)
+         vp.dwY = This->viewports.vp2.dwY;
+         vp.dwHeight = This->viewports.vp2.dwHeight;
+         vp.dwWidth = This->viewports.vp2.dwWidth;
++        vp.dvMinZ = This->viewports.vp2.dvMinZ;
++        vp.dvMaxZ = This->viewports.vp2.dvMaxZ;
+         vp.dvMinZ = 0.0f;
+         vp.dvMaxZ = 1.0f;
+ 
+@@ -93,6 +95,8 @@ void viewport_activate(struct d3d_viewport *This, BOOL ignore_lights)
+         vp.dwY = This->viewports.vp1.dwY;
+         vp.dwHeight = This->viewports.vp1.dwHeight;
+         vp.dwWidth = This->viewports.vp1.dwWidth;
++        vp.dvMinZ = This->viewports.vp1.dvMinZ;
++        vp.dvMaxZ = This->viewports.vp1.dvMaxZ;
+         vp.dvMinZ = 0.0f;
+         vp.dvMaxZ = 1.0f;
+ 
+@@ -104,7 +108,7 @@ void viewport_activate(struct d3d_viewport *This, BOOL ignore_lights)
+         offset.z = 0.0f;
+     }
+ 
+-    update_clip_space(This->active_device, &scale, &offset);
++    //update_clip_space(This->active_device, &scale, &offset);
+     IDirect3DDevice7_SetViewport(&This->active_device->IDirect3DDevice7_iface, &vp);
+ }
+ 
+@@ -389,7 +393,7 @@ static HRESULT WINAPI d3d_viewport_TransformVertices(IDirect3DViewport3 *iface,
+ {
+     struct d3d_viewport *viewport = impl_from_IDirect3DViewport3(iface);
+     //D3DVIEWPORT vp = viewport->viewports.vp1;
+-    D3DMATRIX view_mat, world_mat, clip_mat, mat;
++    D3DMATRIX view_mat, world_mat, proj_mat, clip_mat, mat;
+     float *in;
+     float *out;
+     float hx, hy, hz, hw, x, y, z, w;
+@@ -453,7 +457,10 @@ static HRESULT WINAPI d3d_viewport_TransformVertices(IDirect3DViewport3 *iface,
+     wined3d_device_get_transform(viewport->active_device->wined3d_device,
+             WINED3D_TS_WORLD_MATRIX(0), (struct wined3d_matrix *)&world_mat);
+     multiply_matrix(&mat, &view_mat, &world_mat);
+-    multiply_matrix(&mat, &viewport->active_device->legacy_projection, &mat);
++    //multiply_matrix(&mat, &viewport->active_device->legacy_projection, &mat);
++    wined3d_device_get_transform(viewport->active_device->wined3d_device,
++            D3DTRANSFORMSTATE_PROJECTION, (struct wined3d_matrix *)&proj_mat);
++    multiply_matrix(&mat,&proj_mat,&mat);
+ 
+     in = lpData->lpIn;
+     out = lpData->lpOut;
+-- 
+2.1.0

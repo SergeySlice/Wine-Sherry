@@ -1,0 +1,31 @@
+commit 758d24cee84b6ae2e479922ba67e0f3a0bf1b68a
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Fri Dec 16 16:16:48 2016 +0300
+
+    implement TIMEOUT_EXPIRED_APPLE, bug 38785
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index 77dad45..b212a75 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -103,6 +103,7 @@ static enum wined3d_event_query_result wined3d_event_query_test(const struct win
+                 break;
+ 
+             case GL_TIMEOUT_EXPIRED:
++            case GL_TIMEOUT_EXPIRED_APPLE:    
+                 ret = WINED3D_EVENT_QUERY_WAITING;
+                 break;
+ 
+@@ -177,6 +178,10 @@ enum wined3d_event_query_result wined3d_event_query_finish(const struct wined3d_
+             case GL_CONDITION_SATISFIED:
+                 ret = WINED3D_EVENT_QUERY_OK;
+                 break;
++                //Slice
++            case GL_TIMEOUT_EXPIRED_APPLE:
++                ret = WINED3D_EVENT_QUERY_NOT_STARTED;
++                break;
+ 
+                 /* We don't expect a timeout for a ~584 year wait */
+             default:

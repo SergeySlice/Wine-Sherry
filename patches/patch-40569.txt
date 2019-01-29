@@ -1,0 +1,27 @@
+diff --git a/dlls/ddraw/device.c b/dlls/ddraw/device.c
+index 0f444e4..f5a9c94 100644
+--- a/dlls/ddraw/device.c
++++ b/dlls/ddraw/device.c
+@@ -6933,7 +6933,7 @@ HRESULT d3d_device_create(struct ddraw *ddraw, const GUID *guid, struct ddraw_su
+     if (hw && !(target->surface_desc.ddsCaps.dwCaps & DDSCAPS_VIDEOMEMORY))
+     {
+         WARN("Surface %p is not in video memory.\n", target);
+-        return D3DERR_SURFACENOTINVIDMEM;
++        hw = FALSE;
+     }
+ 
+     if (ddraw->flags & DDRAW_NO3D)
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 623a462..4ddf953 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -3348,6 +3348,9 @@ static void apply_format_fixups(struct wined3d_adapter *adapter, struct wined3d_
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
+     idx = get_format_idx(WINED3DFMT_BC5_UNORM);
+     gl_info->formats[idx].flags[WINED3D_GL_RES_TYPE_TEX_3D] &= ~WINED3DFMT_FLAG_TEXTURE;
++
++    idx = get_format_idx(WINED3DFMT_P8_UINT);
++    format_set_flag(&gl_info->formats[idx], WINED3DFMT_FLAG_RENDERTARGET | WINED3DFMT_FLAG_TEXTURE);
+ }
+ 
+ static unsigned int calculate_vertex_attribute_size(GLenum type, unsigned int component_count)

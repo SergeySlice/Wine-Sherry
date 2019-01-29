@@ -1,0 +1,18 @@
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 2f21b29..48a6ed3 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -2284,8 +2309,12 @@ const struct wined3d_format *wined3d_get_format(const struct wined3d_gl_info *gl
+ 
+     if (idx == -1)
+     {
++        static enum wined3d_format_id old_id;
++        if (old_id != format_id) {
++          old_id = format_id;
+         FIXME("Can't find format %s (%#x) in the format lookup table\n",
+                 debug_d3dformat(format_id), format_id);
++        }
+         /* Get the caller a valid pointer */
+         idx = getFmtIdx(WINED3DFMT_UNKNOWN);
+     }
+

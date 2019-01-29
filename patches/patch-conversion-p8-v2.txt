@@ -1,0 +1,279 @@
+commit 4773a2d0039ff6d8775a513847d0891fa503c32b
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Mon Mar 28 15:13:41 2016 +0300
+
+    update patch for p8 conversion
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index 2f559bb..9b6957a 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -1833,7 +1833,7 @@ HRESULT wined3d_surface_update_desc(struct wined3d_surface *surface, const struc
+ */
+ //03ee99b43c2a01ce0e6f77fc0bbc71570a695336
+ static void convert_r32_float_r16_float(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned short *dst_s;
+     const float *src_f;
+@@ -1853,7 +1853,7 @@ static void convert_r32_float_r16_float(const BYTE *src, BYTE *dst,
+ }
+ 
+ static void convert_r5g6b5_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     static const unsigned char convert_5to8[] =
+     {
+@@ -1894,7 +1894,7 @@ static void convert_r5g6b5_x8r8g8b8(const BYTE *src, BYTE *dst,
+ }
+ 
+ static void convert_x1r5g5b5_a1r5g5b5(const BYTE *src, BYTE *dst,
+-        DWORD src_pitch, DWORD dst_pitch, unsigned int w, unsigned int h)
++        DWORD src_pitch, DWORD dst_pitch, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned int x, y;
+ 
+@@ -1910,7 +1910,7 @@ static void convert_x1r5g5b5_a1r5g5b5(const BYTE *src, BYTE *dst,
+ /* We use this for both B8G8R8A8 -> B8G8R8X8 and B8G8R8X8 -> B8G8R8A8, since
+  * in both cases we're just setting the X / Alpha channel to 0xff. */
+ static void convert_a8r8g8b8_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned int x, y;
+ 
+@@ -1934,7 +1934,7 @@ static inline BYTE cliptobyte(int x)
+ }
+ 
+ static void convert_yuy2_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     int c2, d, e, r2 = 0, g2 = 0, b2 = 0;
+     unsigned int x, y;
+@@ -1976,7 +1976,7 @@ static void convert_yuy2_x8r8g8b8(const BYTE *src, BYTE *dst,
+ }
+ 
+ static void convert_yuy2_r5g6b5(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     unsigned int x, y;
+     int c2, d, e, r2 = 0, g2 = 0, b2 = 0;
+@@ -2078,121 +2078,121 @@ static void convert_p8_x8r8g8b8(const BYTE *src, BYTE *dst,
+  */
+ 
+ static void convert_dxt1_a8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
+ }
+ 
+ static void convert_dxt1_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
+ }
+ 
+ static void convert_dxt1_a4r4g4b4(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4A4_UNORM, w, h);
+ }
+ 
+ static void convert_dxt1_x4r4g4b4(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4X4_UNORM, w, h);
+ }
+ 
+ static void convert_dxt1_a1r5g5b5(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5A1_UNORM, w, h);
+ }
+ 
+ static void convert_dxt1_x1r5g5b5(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5X1_UNORM, w, h);
+ }
+ 
+ static void convert_dxt3_a8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
+ }
+ 
+ static void convert_dxt3_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
+ }
+ 
+ static void convert_dxt3_a4r4g4b4(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4A4_UNORM, w, h);
+ }
+ 
+ static void convert_dxt3_x4r4g4b4(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt3_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B4G4R4X4_UNORM, w, h);
+ }
+ 
+ static void convert_dxt5_a8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt5_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
+ }
+ 
+ static void convert_dxt5_x8r8g8b8(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt5_decode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
+ }
+ 
+ static void convert_a8r8g8b8_dxt1(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
+ }
+ 
+ static void convert_x8r8g8b8_dxt1(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
+ }
+ 
+ static void convert_a1r5g5b5_dxt1(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5A1_UNORM, w, h);
+ }
+ 
+ static void convert_x1r5g5b5_dxt1(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt1_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B5G5R5X1_UNORM, w, h);
+ }
+ 
+ static void convert_a8r8g8b8_dxt3(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt3_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
+ }
+ 
+ static void convert_x8r8g8b8_dxt3(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt3_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
+ }
+ 
+ static void convert_a8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt5_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8A8_UNORM, w, h);
+ }
+ 
+ static void convert_x8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
+-        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
++        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette)
+ {
+     wined3d_dxt5_encode(src, dst, pitch_in, pitch_out, WINED3DFMT_B8G8R8X8_UNORM, w, h);
+ }
+@@ -2200,14 +2200,7 @@ static void convert_x8r8g8b8_dxt5(const BYTE *src, BYTE *dst,
+ struct d3dfmt_converter_desc
+ {
+     enum wined3d_format_id from, to;
+-    void (*convert)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h);
+-};
+-
+-struct d3dfmt_pal_converter_desc
+-{
+-    enum wined3d_format_id from, to;
+-    void (*convert)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h,
+-                    const struct wined3d_palette *palette);
++    void (*convert)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h, const struct wined3d_palette *palette);
+ };
+ 
+ static const struct d3dfmt_converter_desc converters[] =
+@@ -2220,6 +2213,9 @@ static const struct d3dfmt_converter_desc converters[] =
+     {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_B8G8R8A8_UNORM,  convert_a8r8g8b8_x8r8g8b8},
+     {WINED3DFMT_YUY2,           WINED3DFMT_B8G8R8X8_UNORM,  convert_yuy2_x8r8g8b8},
+     {WINED3DFMT_YUY2,           WINED3DFMT_B5G6R5_UNORM,    convert_yuy2_r5g6b5},
++    {WINED3DFMT_P8_UINT,        WINED3DFMT_B5G6R5_UNORM,    convert_p8_r5g6b5},
++    {WINED3DFMT_P8_UINT,        WINED3DFMT_B8G8R8X8_UNORM,  convert_p8_x8r8g8b8},
++    {WINED3DFMT_P8_UINT,        WINED3DFMT_B8G8R8A8_UNORM,  convert_p8_x8r8g8b8},
+ };
+ 
+ static const struct d3dfmt_converter_desc dxtn_converters[] =
+@@ -2249,13 +2245,6 @@ static const struct d3dfmt_converter_desc dxtn_converters[] =
+     {WINED3DFMT_B8G8R8X8_UNORM, WINED3DFMT_DXT5,            convert_x8r8g8b8_dxt5}
+ };
+ 
+-static const struct d3dfmt_pal_converter_desc pal_converters[] =
+-{
+-    {WINED3DFMT_P8_UINT,        WINED3DFMT_B5G6R5_UNORM,    convert_p8_r5g6b5},
+-    {WINED3DFMT_P8_UINT,        WINED3DFMT_B8G8R8X8_UNORM,  convert_p8_x8r8g8b8},
+-    {WINED3DFMT_P8_UINT,        WINED3DFMT_B8G8R8A8_UNORM,  convert_p8_x8r8g8b8},
+-};
+-
+ 
+ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_format_id from,
+         enum wined3d_format_id to)
+@@ -2277,20 +2266,6 @@ static inline const struct d3dfmt_converter_desc *find_converter(enum wined3d_fo
+     return NULL;
+ }
+ 
+-static inline const struct d3dfmt_pal_converter_desc *find_pal_converter(enum wined3d_format_id from,
+-                                                                 enum wined3d_format_id to)
+-{
+-    unsigned int i;
+-    
+-    for (i = 0; i < (sizeof(pal_converters) / sizeof(*pal_converters)); ++i)
+-    {
+-        if (pal_converters[i].from == from && pal_converters[i].to == to)
+-            return &pal_converters[i];
+-    }
+-    
+-    return NULL;
+-}
+-
+ static struct wined3d_texture *surface_convert_format(struct wined3d_texture *src_texture,
+         unsigned int sub_resource_idx, enum wined3d_format_id format)
+ {
+@@ -2339,8 +2314,7 @@ static struct wined3d_texture *surface_convert_format(struct wined3d_texture *sr
+         return NULL;
+     }
+ 
+-    conv->convert(src_map.data, dst_map.data, src_map.row_pitch, dst_map.row_pitch, desc.width, desc.height);
+-  // 62277fb7779f76341efc71999d59242055be5c31
++    conv->convert(src_map.data, dst_map.data, src_map.row_pitch, dst_map.row_pitch, desc.width, desc.height, src_texture->swapchain->palette);
+ 
+     wined3d_resource_sub_resource_unmap(&dst_texture->resource, 0);
+     wined3d_resource_sub_resource_unmap(&src_texture->resource, sub_resource_idx);

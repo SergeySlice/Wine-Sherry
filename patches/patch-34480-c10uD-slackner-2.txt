@@ -1,0 +1,453 @@
+From 45feafaced247ed5ea31d43b65706ccfb0f7268b Mon Sep 17 00:00:00 2001
+From: "Riccardo (C10uD)" <c10ud.dev@gmail.com>
+Date: Wed, 21 Jan 2015 17:28:59 +0100
+Subject: wined3d: allocate memory for all surfaces in texture->resource (v6)
+
+Allow applications to make assumptions about memory contiguity and loading surfaces all at once.
+
+Changes:
+* Added 'managed' flag to resource structure to distinguish different types of allocations.
+* Added utility function to calculate the total needed space for all levels.
+* Prevent adapter memory from underflowing in case resource is managed.
+* Added test for mipmap memory in d3d9/device.c by Stefan Doesinger.
+* Included some cleanups by Sebastian Lackner.
+* Don't unset 'managed' flag or heap.
+* Can be enabled/disabled through registry key Direct3D/ContiguousTextureMemory.
+---
+ dlls/d3d9/tests/device.c       | 108 +++++++++++++++++++++++++++++++++++++++++
+ dlls/wined3d/resource.c        |  38 ++++++++++++---
+ dlls/wined3d/texture.c         |  34 ++++++++++++-
+ dlls/wined3d/utils.c           |  36 ++++++++++++++
+ dlls/wined3d/wined3d_main.c    |  10 ++++
+ dlls/wined3d/wined3d_private.h |   5 ++
+ 6 files changed, 222 insertions(+), 9 deletions(-)
+
+diff --git a/dlls/d3d9/tests/device.c b/dlls/d3d9/tests/device.c
+index ffd3c11..9cc60f3 100644
+--- a/dlls/d3d9/tests/device.c
++++ b/dlls/d3d9/tests/device.c
+@@ -10065,6 +10065,113 @@ static void test_resource_priority(void)
+     DestroyWindow(window);
+ }
+ 
++static void test_mipmap_memory(void)
++{
++    IDirect3DDevice9 *device;
++    IDirect3D9 *d3d;
++    UINT refcount;
++    HWND window;
++    HRESULT hr;
++    unsigned int lvl, pool, fmt, mem_size, tex_size, levels;
++    IDirect3DTexture9 *texture;
++    D3DLOCKED_RECT lr;
++    BYTE *next;
++    static const struct
++    {
++        D3DPOOL pool;
++        const char *name;
++    }
++    pools[] =
++    {
++        {D3DPOOL_MANAGED,       "D3DPOOL_MANAGED"},
++        {D3DPOOL_SYSTEMMEM,     "D3DPOOL_SYSTEMMEM"},
++        {D3DPOOL_SCRATCH,       "D3DPOOL_SCRATCH"},
++        /*{D3DPOOL_DEFAULT,       "D3DPOOL_DEFAULT"}, doesn't have the address relation */
++    };
++    static const struct
++    {
++        D3DFORMAT format;
++        const char *name;
++        unsigned int size;
++    }
++    formats[] =
++    {
++        {D3DFMT_A8R8G8B8,       "D3DFMT_A8R8G8B8",      4},
++        /* A8 is not supported everywhere(e.g. r200), use L8 instead.
++         * I'm not sure if L8 is supported on all GPUs, so test both
++         * to make sure one 8 bit format is tested. */
++        {D3DFMT_A8,             "D3DFMT_A8",            1},
++        {D3DFMT_L8,             "D3DFMT_L8",            1},
++    };
++
++    static const unsigned int alignment = 8, create_size = 256;
++
++    window = CreateWindowA("static", "d3d9_test", WS_OVERLAPPEDWINDOW,
++            0, 0, 640, 480, NULL, NULL, NULL, NULL);
++    d3d = Direct3DCreate9(D3D_SDK_VERSION);
++    ok(!!d3d, "Failed to create a D3D object.\n");
++    if (!(device = create_device(d3d, window, NULL)))
++    {
++        skip("Failed to create a D3D device, skipping tests.\n");
++        IDirect3D9_Release(d3d);
++        DestroyWindow(window);
++        return;
++    }
++
++    for (pool = 0; pool < sizeof(pools) / sizeof(*pools); pool++)
++    {
++        DWORD usage;
++
++        if (pools[pool].pool == D3DPOOL_DEFAULT)
++            usage = D3DUSAGE_DYNAMIC;
++        else
++            usage = 0;
++
++        for (fmt = 0; fmt < sizeof(formats) / sizeof(*formats); fmt++)
++        {
++            hr = IDirect3D9_CheckDeviceFormat(d3d, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
++                    D3DFMT_X8R8G8B8, usage, D3DRTYPE_TEXTURE, formats[fmt].format);
++            if (FAILED(hr))
++            {
++                skip("Format %s is not supported, skipping texture pointer test for this format\n",
++                        formats[fmt].name);
++                continue;
++            }
++
++            hr = IDirect3DDevice9_CreateTexture(device, create_size, create_size, 0,
++                    usage, formats[fmt].format, pools[pool].pool, &texture, NULL);
++            ok(SUCCEEDED(hr), "Failed to create %s %s texture, hr %#x.\n",
++                    pools[pool].name, formats[fmt].name, hr);
++
++            next = NULL;
++            levels = IDirect3DTexture9_GetLevelCount(texture);
++            for (lvl = 0; lvl < levels; lvl++)
++            {
++                hr = IDirect3DTexture9_LockRect(texture, lvl, &lr, NULL, 0);
++                ok(SUCCEEDED(hr), "Failed to lock level %u, hr %#x.\n", lvl, hr);
++
++                if (next)
++                {
++                    ok(next + mem_size == lr.pBits, "%s, %s, lvl %u: Expected pointer %p, got %p\n",
++                            pools[pool].name, formats[fmt].name, lvl, next + mem_size, lr.pBits);
++                }
++                tex_size = create_size >> lvl;
++                mem_size = (tex_size * tex_size * formats[fmt].size + (alignment - 1)) & ~(alignment - 1);
++                next = lr.pBits;
++
++                hr = IDirect3DTexture9_UnlockRect(texture, lvl);
++                ok(SUCCEEDED(hr), "Failed to unlock level %u, hr %#x.\n", lvl, hr);
++            }
++            IDirect3DTexture9_Release(texture);
++        }
++    }
++
++    refcount = IDirect3DDevice9_Release(device);
++    ok(!refcount, "Device has %u references left.\n", refcount);
++    IDirect3D9_Release(d3d);
++    DestroyWindow(window);
++}
++
+ START_TEST(device)
+ {
+     WNDCLASSA wc = {0};
+@@ -10175,6 +10282,7 @@ START_TEST(device)
+     test_writeonly_resource();
+     test_lost_device();
+     test_resource_priority();
++    test_mipmap_memory();
+ 
+     UnregisterClassA("d3d9_test_wc", GetModuleHandleA(NULL));
+ }
+diff --git a/dlls/wined3d/resource.c b/dlls/wined3d/resource.c
+index 0ab55dc..4f9a1df 100644
+--- a/dlls/wined3d/resource.c
++++ b/dlls/wined3d/resource.c
+@@ -112,7 +112,23 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+     resource->resource_ops = resource_ops;
+     resource->map_binding = WINED3D_LOCATION_SYSMEM;
+ 
+-    if (size)
++    switch (type)
++    {
++        /* Memory for surfaces and volumes is allocated by the texture itself allowing apps to make
++         * assumptions about memory contiguity and loading surfaces all at once. */
++        case WINED3D_RTYPE_SURFACE:
++        case WINED3D_RTYPE_VOLUME:
++            if ((usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_tex_mem)
++            {
++                resource->managed = TRUE;
++                break;
++            }
++        default:
++            resource->managed = FALSE;
++            break;
++    }
++
++    if (size && !resource->managed)
+     {
+         if (!wined3d_resource_allocate_sysmem(resource))
+         {
+@@ -126,7 +142,7 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+     }
+ 
+     /* Check that we have enough video ram left */
+-    if (pool == WINED3D_POOL_DEFAULT && d3d->flags & WINED3D_VIDMEM_ACCOUNTING)
++    if (pool == WINED3D_POOL_DEFAULT && d3d->flags & WINED3D_VIDMEM_ACCOUNTING && !resource->managed)
+     {
+         if (size > wined3d_device_get_available_texture_mem(device))
+         {
+@@ -148,7 +164,7 @@ void resource_cleanup(struct wined3d_resource *resource)
+ 
+     TRACE("Cleaning up resource %p.\n", resource);
+ 
+-    if (resource->pool == WINED3D_POOL_DEFAULT && d3d->flags & WINED3D_VIDMEM_ACCOUNTING)
++    if (resource->pool == WINED3D_POOL_DEFAULT && d3d->flags & WINED3D_VIDMEM_ACCOUNTING && !resource->managed)
+     {
+         TRACE("Decrementing device memory pool by %u.\n", resource->size);
+         adapter_adjust_memory(resource->device->adapter, (INT64)0 - resource->size);
+@@ -220,6 +236,9 @@ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource)
+     SIZE_T align = RESOURCE_ALIGNMENT - 1 + sizeof(*p);
+     void *mem;
+ 
++    if (resource->managed)
++        return TRUE;
++
+     if (!(mem = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, resource->size + align)))
+         return FALSE;
+ 
+@@ -233,13 +252,16 @@ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource)
+ 
+ void wined3d_resource_free_sysmem(struct wined3d_resource *resource)
+ {
+-    void **p = resource->heap_memory;
++    if (!resource->managed)
++    {
++        void **p = resource->heap_memory;
+ 
+-    if (!p)
+-        return;
++        if (!p)
++            return;
+ 
+-    HeapFree(GetProcessHeap(), 0, *(--p));
+-    resource->heap_memory = NULL;
++        HeapFree(GetProcessHeap(), 0, *(--p));
++        resource->heap_memory = NULL;
++    }
+ }
+ 
+ DWORD wined3d_resource_sanitize_map_flags(const struct wined3d_resource *resource, DWORD flags)
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index 06e5681..f5ed89e 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -33,6 +33,7 @@ static HRESULT wined3d_texture_init(struct wined3d_texture *texture, const struc
+         const struct wined3d_resource_ops *resource_ops)
+ {
+     const struct wined3d_format *format = wined3d_get_format(&device->adapter->gl_info, desc->format);
++    UINT surfaces_size = 0;
+     HRESULT hr;
+ 
+     TRACE("texture %p, texture_ops %p, layer_count %u, level_count %u, resource_type %s, format %s, "
+@@ -51,9 +52,13 @@ static HRESULT wined3d_texture_init(struct wined3d_texture *texture, const struc
+             return WINED3DERR_INVALIDCALL;
+     }
+ 
++    if ((desc->usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_tex_mem)
++        surfaces_size = wined3d_format_calculate_size_total(format, device->surface_alignment, desc->width,
++                desc->height, desc->depth, level_count, desc->resource_type);
++
+     if (FAILED(hr = resource_init(&texture->resource, device, desc->resource_type, format,
+             desc->multisample_type, desc->multisample_quality, desc->usage, desc->pool,
+-            desc->width, desc->height, desc->depth, 0, parent, parent_ops, resource_ops)))
++            desc->width, desc->height, desc->depth, surfaces_size, parent, parent_ops, resource_ops)))
+     {
+         static unsigned int once;
+ 
+@@ -959,6 +964,7 @@ static HRESULT cubetexture_init(struct wined3d_texture *texture, const struct wi
+     struct wined3d_resource_desc surface_desc;
+     unsigned int i, j;
+     HRESULT hr;
++    BYTE *current_heap;
+ 
+     /* TODO: It should only be possible to create textures for formats
+      * that are reported as supported. */
+@@ -1027,6 +1033,7 @@ static HRESULT cubetexture_init(struct wined3d_texture *texture, const struct wi
+     /* Generate all the surfaces. */
+     surface_desc = *desc;
+     surface_desc.resource_type = WINED3D_RTYPE_SURFACE;
++    current_heap = texture->resource.heap_memory;
+     for (i = 0; i < texture->level_count; ++i)
+     {
+         /* Create the 6 faces. */
+@@ -1052,6 +1059,13 @@ static HRESULT cubetexture_init(struct wined3d_texture *texture, const struct wi
+                 return hr;
+             }
+ 
++            if ((desc->usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_tex_mem)
++            {
++                surface->resource.heap_memory = current_heap;
++                current_heap += wined3d_format_calculate_size(texture->resource.format,
++                        device->surface_alignment, surface_desc.width, surface_desc.height, 1);
++            }
++
+             texture->sub_resources[idx] = &surface->resource;
+             TRACE("Created surface level %u @ %p.\n", i, surface);
+         }
+@@ -1071,6 +1085,7 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
+     UINT pow2_width, pow2_height;
+     unsigned int i;
+     HRESULT hr;
++    BYTE *current_heap;
+ 
+     /* TODO: It should only be possible to create textures for formats
+      * that are reported as supported. */
+@@ -1181,6 +1196,7 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
+     /* Generate all the surfaces. */
+     surface_desc = *desc;
+     surface_desc.resource_type = WINED3D_RTYPE_SURFACE;
++    current_heap = texture->resource.heap_memory;
+     for (i = 0; i < texture->level_count; ++i)
+     {
+         struct wined3d_surface *surface;
+@@ -1193,6 +1209,13 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
+             return hr;
+         }
+ 
++        if ((desc->usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_tex_mem)
++        {
++            surface->resource.heap_memory = current_heap;
++            current_heap += wined3d_format_calculate_size(texture->resource.format,
++                    device->surface_alignment, surface_desc.width, surface_desc.height, 1);
++        }
++
+         texture->sub_resources[i] = &surface->resource;
+         TRACE("Created surface level %u @ %p.\n", i, surface);
+         /* Calculate the next mipmap level. */
+@@ -1309,6 +1332,7 @@ static HRESULT volumetexture_init(struct wined3d_texture *texture, const struct
+     struct wined3d_resource_desc volume_desc;
+     unsigned int i;
+     HRESULT hr;
++    BYTE *current_heap;
+ 
+     /* TODO: It should only be possible to create textures for formats
+      * that are reported as supported. */
+@@ -1384,6 +1408,7 @@ static HRESULT volumetexture_init(struct wined3d_texture *texture, const struct
+     /* Generate all the surfaces. */
+     volume_desc = *desc;
+     volume_desc.resource_type = WINED3D_RTYPE_VOLUME;
++    current_heap = texture->resource.heap_memory;
+     for (i = 0; i < texture->level_count; ++i)
+     {
+         struct wined3d_volume *volume;
+@@ -1395,6 +1420,13 @@ static HRESULT volumetexture_init(struct wined3d_texture *texture, const struct
+             return hr;
+         }
+ 
++        if ((desc->usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_tex_mem)
++        {
++            volume->resource.heap_memory = current_heap;
++            current_heap += wined3d_format_calculate_size(texture->resource.format,
++                    device->surface_alignment, volume_desc.width, volume_desc.height, volume_desc.depth);
++        }
++
+         texture->sub_resources[i] = &volume->resource;
+ 
+         /* Calculate the next mipmap level. */
+diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
+index 9e9fc49..7a3086f 100644
+--- a/dlls/wined3d/utils.c
++++ b/dlls/wined3d/utils.c
+@@ -2281,6 +2281,42 @@ UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT ali
+     return size;
+ }
+ 
++UINT wined3d_format_calculate_size_total(const struct wined3d_format *format, UINT alignment,
++        UINT width, UINT height, UINT depth, UINT levels, enum wined3d_resource_type type)
++{
++    UINT size = 0;
++    unsigned int i;
++
++    for (i = 0; i < levels; ++i)
++    {
++        size += wined3d_format_calculate_size(format, alignment, width, height, depth);
++        switch (type)
++        {
++            case WINED3D_RTYPE_TEXTURE:
++                width = max(1, width >> 1);
++                height = max(1, height >> 1);
++                break;
++            case WINED3D_RTYPE_VOLUME_TEXTURE:
++                width = max(1, width >> 1);
++                height = max(1, height >> 1);
++                depth = max(1, depth >> 1);
++                break;
++            case WINED3D_RTYPE_CUBE_TEXTURE:
++                width = max(1, width >> 1);
++                height = width;
++                break;
++            default:
++                ERR("Invalid texture type: %s\n", debug_d3dresourcetype(type));
++                return 0;
++        }
++    }
++
++    if (type == WINED3D_RTYPE_CUBE_TEXTURE)
++        size *= 6;
++
++    return size;
++}
++
+ /*****************************************************************************
+  * Trace formatting of useful values
+  */
+diff --git a/dlls/wined3d/wined3d_main.c b/dlls/wined3d/wined3d_main.c
+index 758ba43..76a1a88 100644
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -76,6 +76,7 @@ struct wined3d_settings wined3d_settings =
+     ORM_FBO,        /* Use FBOs to do offscreen rendering */
+     PCI_VENDOR_NONE,/* PCI Vendor ID */
+     PCI_DEVICE_NONE,/* PCI Device ID */
++    FALSE,          /* Allocate contiguous memory for texture surfaces. */
+     0,              /* The default of memory is set in init_driver_info */
+     NULL,           /* No wine logo by default */
+     TRUE,           /* Multisampling enabled by default. */
+@@ -251,6 +252,15 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
+                 wined3d_settings.pci_vendor_id = pci_vendor_id;
+             }
+         }
++        if (!get_config_key(hkey, appkey, "ContiguousTextureMemory", buffer, size))
++        {
++            if (!strcmp(buffer,"enabled"))
++            {
++                WARN_(winediag)("Enabling allocation of contiguous memory for texture surfaces.\n");
++                WARN_(winediag)("System memory usage is not optimized yet. Expect OOM to happen more quickly.\n");
++                wined3d_settings.contiguous_tex_mem = TRUE;
++            }
++        }
+         if ( !get_config_key( hkey, appkey, "VideoMemorySize", buffer, size) )
+         {
+             int TmpVideoMemorySize = atoi(buffer);
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index 4373805..49c5d92 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -269,6 +269,7 @@ struct wined3d_settings
+     unsigned short pci_vendor_id;
+     unsigned short pci_device_id;
+     /* Memory tracking and object counting. */
++    BOOL contiguous_tex_mem;
+     UINT64 emulated_textureram;
+     char *logo;
+     int allow_multisampling;
+@@ -2101,6 +2102,7 @@ struct wined3d_resource
+     UINT multisample_quality;
+     DWORD usage;
+     enum wined3d_pool pool;
++    BOOL managed;
+     DWORD access_flags;
+     DWORD draw_binding;
+     DWORD map_binding;
+@@ -3150,6 +3152,9 @@ const struct wined3d_format *wined3d_get_format(const struct wined3d_gl_info *gl
+ UINT wined3d_format_calculate_pitch(const struct wined3d_format *format, UINT width) DECLSPEC_HIDDEN;
+ UINT wined3d_format_calculate_size(const struct wined3d_format *format,
+         UINT alignment, UINT width, UINT height, UINT depth) DECLSPEC_HIDDEN;
++UINT wined3d_format_calculate_size_total(const struct wined3d_format *format,
++        UINT alignment, UINT width, UINT height, UINT depth, UINT levels,
++        enum wined3d_resource_type type) DECLSPEC_HIDDEN;
+ DWORD wined3d_format_convert_from_float(const struct wined3d_surface *surface,
+         const struct wined3d_color *color) DECLSPEC_HIDDEN;
+ const struct wined3d_color_key_conversion * wined3d_format_get_color_key_conversion(
+-- 
+2.2.1
