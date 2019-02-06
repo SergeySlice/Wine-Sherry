@@ -1,0 +1,443 @@
+From bee51d2c42a90c8146993cf77a2f76c2002b1c34 Mon Sep 17 00:00:00 2001
+From: Andrew Wesie <awesie@gmail.com>
+Date: Tue, 2 Oct 2018 23:28:01 -0500
+Subject: [PATCH] wined3d: Use bindless textures for GLSL shaders.
+
+Wine-Bug: https://bugs.winehq.org/show_bug.cgi?id=44514
+Signed-off-by: Andrew Wesie <awesie@gmail.com>
+---
+ dlls/wined3d/adapter_gl.c      |   6 +++
+ dlls/wined3d/context.c         |   6 +++
+ dlls/wined3d/device.c          |  54 ++++++++++++++++++++
+ dlls/wined3d/glsl_shader.c     | 113 ++++++++++++++++++++++++++++++++++++++++-
+ dlls/wined3d/texture.c         |  18 ++++---
+ dlls/wined3d/view.c            |  29 +++++++++++
+ dlls/wined3d/wined3d_gl.h      |   1 +
+ dlls/wined3d/wined3d_private.h |  24 +++++++++
+ 8 files changed, 244 insertions(+), 7 deletions(-)
+
+diff --git a/dlls/wined3d/adapter_gl.c b/dlls/wined3d/adapter_gl.c
+index 145f0f9..3471cb3 100644
+--- a/dlls/wined3d/adapter_gl.c
++++ b/dlls/wined3d/adapter_gl.c
+@@ -57,6 +57,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
+ 
+     /* ARB */
+     {"GL_ARB_base_instance",                ARB_BASE_INSTANCE             },
++    {"GL_ARB_bindless_texture",             ARB_BINDLESS_TEXTURE          },
+     {"GL_ARB_blend_func_extended",          ARB_BLEND_FUNC_EXTENDED       },
+     {"GL_ARB_buffer_storage",               ARB_BUFFER_STORAGE            },
+     {"GL_ARB_clear_buffer_object",          ARB_CLEAR_BUFFER_OBJECT       },
+@@ -2073,6 +2074,11 @@ static void load_gl_funcs(struct wined3d_gl_info *gl_info)
+     /* GL_ARB_base_instance */
+     USE_GL_FUNC(glDrawArraysInstancedBaseInstance)
+     USE_GL_FUNC(glDrawElementsInstancedBaseVertexBaseInstance)
++    /* GL_ARB_bindless_texture */
++    USE_GL_FUNC(glGetTextureSamplerHandleARB)
++    USE_GL_FUNC(glMakeTextureHandleNonResidentARB)
++    USE_GL_FUNC(glMakeTextureHandleResidentARB)
++    USE_GL_FUNC(glUniformHandleui64ARB)
+     /* GL_ARB_blend_func_extended */
+     USE_GL_FUNC(glBindFragDataLocationIndexed)
+     USE_GL_FUNC(glGetFragDataIndex)
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index b936975..490b847 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -3805,6 +3805,12 @@ static void context_bind_shader_resources(struct wined3d_context *context,
+     if (!(shader = state->shader[shader_type]))
+         return;
+ 
++    if (device->shader_backend->shader_load_sampler_handles)
++    {
++        device->shader_backend->shader_load_sampler_handles(device->shader_priv, context, state, shader);
++        return;
++    }
++
+     tex_unit_map = context_get_tex_unit_mapping(context,
+             &shader->reg_maps.shader_version, &base, &count);
+ 
+diff --git a/dlls/wined3d/device.c b/dlls/wined3d/device.c
+index 41be0eb..eb20363 100644
+--- a/dlls/wined3d/device.c
++++ b/dlls/wined3d/device.c
+@@ -837,6 +837,59 @@ static void destroy_default_samplers(struct wined3d_device *device, struct wined
+     device->null_sampler = NULL;
+ }
+ 
++static GLuint64 create_dummy_sampler_handle(struct wined3d_device *device, struct wined3d_context *context,
++        GLuint texture)
++{
++    const struct wined3d_gl_info *gl_info = context->gl_info;
++    GLuint64 handle;
++
++    handle = GL_EXTCALL(glGetTextureSamplerHandleARB(texture, device->default_sampler->name));
++    GL_EXTCALL(glMakeTextureHandleResidentARB(handle));
++    checkGLcall("glMakeTextureHandleResidentARB");
++    return handle;
++}
++
++/* Context activation is done by the caller. */
++static void create_dummy_sampler_handles(struct wined3d_device *device, struct wined3d_context *context)
++{
++    const struct wined3d_gl_info *gl_info = context->gl_info;
++    const struct wined3d_dummy_textures *textures = &device->dummy_textures;
++    struct wined3d_dummy_sampler_handles *handles = &device->dummy_sampler_handles;
++
++    if (!gl_info->supported[ARB_BINDLESS_TEXTURE])
++        return;
++
++    if (gl_info->supported[ARB_TEXTURE_MULTISAMPLE])
++    {
++        handles->tex_2d_ms = create_dummy_sampler_handle(device, context, textures->tex_2d_ms);
++        handles->tex_2d_ms_array = create_dummy_sampler_handle(device, context, textures->tex_2d_ms_array);
++    }
++
++    if (gl_info->supported[ARB_TEXTURE_BUFFER_OBJECT])
++        handles->tex_buffer = create_dummy_sampler_handle(device, context, textures->tex_buffer);
++
++    if (gl_info->supported[EXT_TEXTURE_ARRAY])
++    {
++        handles->tex_2d_array = create_dummy_sampler_handle(device, context, textures->tex_2d_array);
++        handles->tex_1d_array = create_dummy_sampler_handle(device, context, textures->tex_1d_array);
++    }
++
++    if (gl_info->supported[ARB_TEXTURE_CUBE_MAP_ARRAY])
++        handles->tex_cube_array = create_dummy_sampler_handle(device, context, textures->tex_cube_array);
++
++    if (gl_info->supported[ARB_TEXTURE_CUBE_MAP])
++        handles->tex_cube = create_dummy_sampler_handle(device, context, textures->tex_cube);
++
++    if (gl_info->supported[EXT_TEXTURE3D])
++        handles->tex_3d = create_dummy_sampler_handle(device, context, textures->tex_3d);
++
++    if (gl_info->supported[ARB_TEXTURE_RECTANGLE])
++        handles->tex_rect = create_dummy_sampler_handle(device, context, textures->tex_rect);
++
++    handles->tex_2d = create_dummy_sampler_handle(device, context, textures->tex_2d);
++    handles->tex_1d = create_dummy_sampler_handle(device, context, textures->tex_1d);
++}
++
+ static LONG fullscreen_style(LONG style)
+ {
+     /* Make sure the window is managed, otherwise we won't get keyboard input. */
+@@ -1051,6 +1104,7 @@ static void wined3d_device_create_primary_opengl_context_cs(void *object)
+     context = context_acquire(device, target, 0);
+     create_dummy_textures(device, context);
+     create_default_samplers(device, context);
++    create_dummy_sampler_handles(device, context);
+     context_release(context);
+ }
+ 
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index ede476c..20ae4de 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -698,6 +698,112 @@ static void shader_glsl_append_sampler_binding_qualifier(struct wined3d_string_b
+         ERR("Unmapped sampler %u.\n", sampler_idx);
+ }
+ 
++static BOOL shader_glsl_use_bindless_texture(const struct wined3d_gl_info *gl_info,
++        unsigned int sampler_idx, const struct wined3d_shader_resource_info *resource_info)
++{
++    return gl_info->supported[ARB_BINDLESS_TEXTURE]
++            && shader_glsl_use_layout_binding_qualifier(gl_info)
++            && sampler_idx >= 16
++            && resource_info->type != WINED3D_SHADER_RESOURCE_BUFFER;
++}
++
++static GLuint64 shader_glsl_dummy_sampler_handle(struct wined3d_context *context,
++        enum wined3d_shader_resource_type type)
++{
++    const struct wined3d_device *device = context->device;
++
++    switch (type)
++    {
++    case WINED3D_SHADER_RESOURCE_BUFFER:
++        return device->dummy_sampler_handles.tex_buffer;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_1D:
++        return device->dummy_sampler_handles.tex_1d;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_2D:
++        return device->dummy_sampler_handles.tex_2d;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_3D:
++        return device->dummy_sampler_handles.tex_3d;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_CUBE:
++        return device->dummy_sampler_handles.tex_cube;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_1DARRAY:
++        return device->dummy_sampler_handles.tex_1d_array;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_2DARRAY:
++        return device->dummy_sampler_handles.tex_2d_array;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_CUBEARRAY:
++        return device->dummy_sampler_handles.tex_cube_array;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_2DMS:
++        return device->dummy_sampler_handles.tex_2d_ms;
++    case WINED3D_SHADER_RESOURCE_TEXTURE_2DMSARRAY:
++        return device->dummy_sampler_handles.tex_2d_array;
++    default:
++        FIXME("Unhandled resource type %#x.\n", type);
++        return 0;
++    }
++}
++
++static void shader_glsl_load_sampler_handles(void *shader_priv, struct wined3d_context *context,
++        const struct wined3d_state *state, const struct wined3d_shader *shader)
++{
++    const struct glsl_context_data *ctx_data = context->shader_backend_data;
++    const struct wined3d_device *device = context->device;
++    const struct wined3d_gl_info *gl_info = context->gl_info;
++    struct shader_glsl_priv *priv = shader_priv;
++    struct wined3d_string_buffer *sampler_name = string_buffer_get(&priv->string_buffers);
++    enum wined3d_shader_type shader_type = shader->reg_maps.shader_version.type;
++    const char *prefix = shader_glsl_get_prefix(shader_type);
++
++    struct wined3d_shader_sampler_map_entry *entry;
++    struct wined3d_shader_resource_view *view;
++    struct wined3d_sampler *sampler;
++    unsigned int bind_idx, i;
++    GLint name_loc;
++
++    for (i = 0; i < shader->reg_maps.sampler_map.count; ++i)
++    {
++        entry = &shader->reg_maps.sampler_map.entries[i];
++        bind_idx = shader_glsl_map_tex_unit(context, &shader->reg_maps.shader_version, entry->bind_idx);
++        if (entry->sampler_idx == WINED3D_SAMPLER_DEFAULT)
++            sampler = device->default_sampler;
++        else if (!(sampler = state->sampler[shader_type][entry->sampler_idx]))
++            sampler = device->null_sampler;
++
++        string_buffer_sprintf(sampler_name, "%s_sampler%u", prefix, entry->bind_idx);
++        name_loc = GL_EXTCALL(glGetUniformLocation(ctx_data->glsl_program->id, sampler_name->buffer));
++        if (name_loc == -1)
++        {
++            ERR("No uniform location at %u, %s\n", i, sampler_name->buffer);
++            continue;
++        }
++
++        if (!(view = state->shader_resource_view[shader_type][entry->resource_idx]))
++            WARN("No resource view bound at index %u, %u.\n", shader_type, entry->resource_idx);
++
++        if (shader_glsl_use_bindless_texture(gl_info, i, &shader->reg_maps.resource_info[entry->resource_idx]))
++        {
++            GLuint64 handle;
++            if (view)
++            {
++                handle = wined3d_shader_resource_view_handle(view, sampler, context);
++            }
++            else
++            {
++                handle = shader_glsl_dummy_sampler_handle(context,
++                        shader->reg_maps.resource_info[entry->resource_idx].type);
++            }
++            GL_EXTCALL(glUniformHandleui64ARB(name_loc, handle));
++            checkGLcall("glUniformHandleui64ARB");
++        }
++        else if (bind_idx == WINED3D_UNMAPPED_STAGE || bind_idx >= gl_info->limits.combined_samplers)
++        {
++            ERR("Trying to load sampler %s on unsupported unit %u.\n", sampler_name->buffer, bind_idx);
++        }
++        else if (view)
++        {
++            wined3d_shader_resource_view_bind(view, bind_idx, sampler, context);
++        }
++    }
++    string_buffer_release(&priv->string_buffers, sampler_name);
++}
++
+ /* Context activation is done by the caller. */
+ static void shader_glsl_load_samplers(const struct wined3d_context *context,
+         struct shader_glsl_priv *priv, GLuint program_id, const struct wined3d_shader_reg_maps *reg_maps)
+@@ -2345,7 +2451,9 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
+                 break;
+         }
+ 
+-        if (shader_glsl_use_layout_binding_qualifier(gl_info))
++        if (shader_glsl_use_bindless_texture(gl_info, i, &reg_maps->resource_info[entry->resource_idx]))
++            shader_addline(buffer, "layout(bindless_sampler)\n");
++        else if (shader_glsl_use_layout_binding_qualifier(gl_info))
+             shader_glsl_append_sampler_binding_qualifier(buffer, context, version, entry->bind_idx);
+         shader_addline(buffer, "uniform %s%s %s_sampler%u;\n",
+                 sampler_type_prefix, sampler_type, prefix, entry->bind_idx);
+@@ -7369,6 +7477,8 @@ static void shader_glsl_generate_alpha_test(struct wined3d_string_buffer *buffer
+ static void shader_glsl_enable_extensions(struct wined3d_string_buffer *buffer,
+         const struct wined3d_gl_info *gl_info)
+ {
++    if (gl_info->supported[ARB_BINDLESS_TEXTURE])
++        shader_addline(buffer, "#extension GL_ARB_bindless_texture : enable\n");
+     if (gl_info->supported[ARB_CULL_DISTANCE])
+         shader_addline(buffer, "#extension GL_ARB_cull_distance : enable\n");
+     if (gl_info->supported[ARB_GPU_SHADER5])
+@@ -11400,6 +11510,7 @@ const struct wined3d_shader_backend_ops glsl_shader_backend =
+     shader_glsl_get_caps,
+     shader_glsl_color_fixup_supported,
+     shader_glsl_has_ffp_proj_control,
++    shader_glsl_load_sampler_handles,
+ };
+ 
+ static void glsl_vertex_pipe_vp_enable(const struct wined3d_gl_info *gl_info, BOOL enable) {}
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index 67a903e..d1520f6 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -926,7 +926,7 @@ void wined3d_texture_set_swapchain(struct wined3d_texture *texture, struct wined
+ }
+ 
+ /* Context activation is done by the caller. */
+-void wined3d_texture_bind(struct wined3d_texture *texture,
++GLuint wined3d_texture_get_name(struct wined3d_texture *texture,
+         struct wined3d_context *context, BOOL srgb)
+ {
+     const struct wined3d_gl_info *gl_info = context->gl_info;
+@@ -950,10 +950,7 @@ void wined3d_texture_bind(struct wined3d_texture *texture,
+     target = texture->target;
+ 
+     if (gl_tex->name)
+-    {
+-        context_bind_texture(context, target, gl_tex->name);
+-        return;
+-    }
++        return gl_tex->name;
+ 
+     gl_info->gl_ops.gl.p_glGenTextures(1, &gl_tex->name);
+     checkGLcall("glGenTextures");
+@@ -962,7 +959,7 @@ void wined3d_texture_bind(struct wined3d_texture *texture,
+     if (!gl_tex->name)
+     {
+         ERR("Failed to generate a texture name.\n");
+-        return;
++        return 0;
+     }
+ 
+     /* Initialise the state of the texture object to the OpenGL defaults, not
+@@ -1062,6 +1059,15 @@ void wined3d_texture_bind(struct wined3d_texture *texture,
+         gl_info->gl_ops.gl.p_glTexParameteriv(target, GL_TEXTURE_SWIZZLE_RGBA, &swizzle.x);
+         checkGLcall("glTexParameteriv(GL_TEXTURE_SWIZZLE_RGBA)");
+     }
++
++    return gl_tex->name;
++}
++
++/* Context activation is done by the caller. */
++void wined3d_texture_bind(struct wined3d_texture *texture,
++        struct wined3d_context *context, BOOL srgb)
++{
++    context_bind_texture(context, texture->target, wined3d_texture_get_name(texture, context, srgb));
+ }
+ 
+ /* Context activation is done by the caller. */
+diff --git a/dlls/wined3d/view.c b/dlls/wined3d/view.c
+index 145fcfa..d6647c4 100644
+--- a/dlls/wined3d/view.c
++++ b/dlls/wined3d/view.c
+@@ -844,6 +844,35 @@ void wined3d_shader_resource_view_bind(struct wined3d_shader_resource_view *view
+     wined3d_sampler_bind(sampler, unit, texture, context);
+ }
+ 
++GLuint64 wined3d_shader_resource_view_handle(struct wined3d_shader_resource_view *view,
++        struct wined3d_sampler *sampler, struct wined3d_context *context)
++{
++    const struct wined3d_gl_info *gl_info = context->gl_info;
++    GLuint name;
++    GLuint64 handle;
++
++    if (view->gl_view.name)
++    {
++        name = view->gl_view.name;
++    }
++    else if (view->resource->type == WINED3D_RTYPE_BUFFER)
++    {
++        FIXME("Buffer shader resources not supported.\n");
++        return 0;
++    }
++    else
++    {
++        struct wined3d_texture *texture = wined3d_texture_from_resource(view->resource);
++        name = wined3d_texture_get_name(texture, context, FALSE);
++    }
++
++    handle = GL_EXTCALL(glGetTextureSamplerHandleARB(name, sampler->name));
++    checkGLcall("glGetTextureSamplerHandleARB");
++    GL_EXTCALL(glMakeTextureHandleResidentARB(handle));
++    checkGLcall("glMakeTextureHandleResidentARB");
++    return handle;
++}
++
+ /* Context activation is done by the caller. */
+ static void shader_resource_view_bind_and_dirtify(struct wined3d_shader_resource_view *view,
+         struct wined3d_context *context)
+diff --git a/dlls/wined3d/wined3d_gl.h b/dlls/wined3d/wined3d_gl.h
+index 52c7fc5..8ee75f2 100644
+--- a/dlls/wined3d/wined3d_gl.h
++++ b/dlls/wined3d/wined3d_gl.h
+@@ -43,6 +43,7 @@ enum wined3d_gl_extension
+     APPLE_YCBCR_422,
+     /* ARB */
+     ARB_BASE_INSTANCE,
++    ARB_BINDLESS_TEXTURE,
+     ARB_BLEND_FUNC_EXTENDED,
+     ARB_BUFFER_STORAGE,
+     ARB_CLEAR_BUFFER_OBJECT,
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index 5b5e4af..95ce08b 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -1418,6 +1418,8 @@ struct wined3d_shader_backend_ops
+     void (*shader_get_caps)(const struct wined3d_gl_info *gl_info, struct shader_caps *caps);
+     BOOL (*shader_color_fixup_supported)(struct color_fixup_desc fixup);
+     BOOL (*shader_has_ffp_proj_control)(void *shader_priv);
++    void (*shader_load_sampler_handles)(void *shader_priv, struct wined3d_context *context,
++            const struct wined3d_state *state, const struct wined3d_shader *shader);
+ };
+ 
+ extern const struct wined3d_shader_backend_ops glsl_shader_backend DECLSPEC_HIDDEN;
+@@ -2975,6 +2977,21 @@ struct wined3d_dummy_textures
+     GLuint tex_2d_ms_array;
+ };
+ 
++struct wined3d_dummy_sampler_handles
++{
++    GLuint64 tex_1d;
++    GLuint64 tex_2d;
++    GLuint64 tex_rect;
++    GLuint64 tex_3d;
++    GLuint64 tex_cube;
++    GLuint64 tex_cube_array;
++    GLuint64 tex_1d_array;
++    GLuint64 tex_2d_array;
++    GLuint64 tex_buffer;
++    GLuint64 tex_2d_ms;
++    GLuint64 tex_2d_ms_array;
++};
++
+ #define WINED3D_UNMAPPED_STAGE ~0u
+ 
+ /* Multithreaded flag. Removed from the public header to signal that
+@@ -3058,6 +3075,9 @@ struct wined3d_device
+     struct wined3d_sampler *default_sampler;
+     struct wined3d_sampler *null_sampler;
+ 
++    /* Texture sampler handles for when no texture is mapped */
++    struct wined3d_dummy_sampler_handles dummy_sampler_handles;
++
+     /* Command stream */
+     struct wined3d_cs *cs;
+ 
+@@ -3397,6 +3417,8 @@ void wined3d_texture_download_from_texture(struct wined3d_texture *dst_texture,
+ GLenum wined3d_texture_get_gl_buffer(const struct wined3d_texture *texture) DECLSPEC_HIDDEN;
+ void wined3d_texture_get_memory(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+         struct wined3d_bo_address *data, DWORD locations) DECLSPEC_HIDDEN;
++GLuint wined3d_texture_get_name(struct wined3d_texture *texture,
++        struct wined3d_context *context, BOOL srgb) DECLSPEC_HIDDEN;
+ void wined3d_texture_invalidate_location(struct wined3d_texture *texture,
+         unsigned int sub_resource_idx, DWORD location) DECLSPEC_HIDDEN;
+ void wined3d_texture_load(struct wined3d_texture *texture,
+@@ -3884,6 +3906,8 @@ struct wined3d_shader_resource_view
+ void shader_resource_view_generate_mipmaps(struct wined3d_shader_resource_view *view) DECLSPEC_HIDDEN;
+ void wined3d_shader_resource_view_bind(struct wined3d_shader_resource_view *view, unsigned int unit,
+         struct wined3d_sampler *sampler, struct wined3d_context *context) DECLSPEC_HIDDEN;
++GLuint64 wined3d_shader_resource_view_handle(struct wined3d_shader_resource_view *view,
++        struct wined3d_sampler *sampler, struct wined3d_context *context) DECLSPEC_HIDDEN;
+ 
+ struct wined3d_unordered_access_view
+ {
+-- 
+2.7.4

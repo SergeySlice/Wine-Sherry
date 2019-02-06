@@ -1,0 +1,30 @@
+commit f93fd225e03efc5136796226cb3c65b6fc801d74
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Wed Feb 6 18:39:58 2019 +0300
+
+    patch 38785
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index d4e7cf5..cc9b992 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -220,6 +220,7 @@ static enum wined3d_fence_result wined3d_fence_test(const struct wined3d_fence *
+                 break;
+ 
+             case GL_TIMEOUT_EXPIRED:
++            case GL_TIMEOUT_EXPIRED_APPLE:
+                 ret = WINED3D_FENCE_WAITING;
+                 break;
+ 
+@@ -303,6 +304,9 @@ enum wined3d_fence_result wined3d_fence_wait(const struct wined3d_fence *fence,
+             case GL_CONDITION_SATISFIED:
+                 ret = WINED3D_FENCE_OK;
+                 break;
++          case GL_TIMEOUT_EXPIRED_APPLE:
++                ret = WINED3D_FENCE_NOT_STARTED;
++                break;
+ 
+                 /* We don't expect a timeout for a ~292 year wait */
+             default:
