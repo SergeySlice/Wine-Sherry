@@ -1,0 +1,260 @@
+commit 3a82a30ac5d0a2c7a84865e1ec3e4c9db1c3caf6
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Thu Feb 7 19:59:59 2019 +0300
+
+    implement SO_OVERFLOW
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/d3d11/async.c b/dlls/d3d11/async.c
+index 1a56df9..53104dd 100644
+--- a/dlls/d3d11/async.c
++++ b/dlls/d3d11/async.c
+@@ -330,6 +330,13 @@ static HRESULT STDMETHODCALLTYPE d3d10_query_GetData(ID3D10Query *iface, void *d
+     if (!data && data_size)
+         return E_INVALIDARG;
+ 
++  if (query->desc.Query == D3D11_QUERY_SO_OVERFLOW_PREDICATE) {
++    char *tmp = (char*)data;
++    *tmp = 0;
++    return S_OK;
++  }
++
++
+     if (query->desc.Query == D3D11_QUERY_PIPELINE_STATISTICS
+             && data_size == sizeof(D3D10_QUERY_DATA_PIPELINE_STATISTICS))
+     {
+@@ -365,7 +372,9 @@ static UINT STDMETHODCALLTYPE d3d10_query_GetDataSize(ID3D10Query *iface)
+     struct d3d_query *query = impl_from_ID3D10Query(iface);
+     unsigned int data_size;
+ 
+-    TRACE("iface %p.\n", iface);
++ //   TRACE("iface %p.\n", iface);
++  if (query->desc.Query == D3D11_QUERY_SO_OVERFLOW_PREDICATE)
++    return 1;
+ 
+     wined3d_mutex_lock();
+     data_size = wined3d_query_get_data_size(query->wined3d_query);
+diff --git a/dlls/d3d11/device.c b/dlls/d3d11/device.c
+index c225563..3f83cdd 100644
+--- a/dlls/d3d11/device.c
++++ b/dlls/d3d11/device.c
+@@ -1871,6 +1871,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_VSSetSamplers(ID3D11Device
+ {
+     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+     unsigned int i;
++  if (!device) {
++    ERR("no device\n");
++    return;
++  }
+ 
+     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
+             iface, start_slot, sampler_count, samplers);
+@@ -1891,6 +1895,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_Begin(ID3D11DeviceContext1
+ {
+     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
+     HRESULT hr;
++  if (!query) {
++    ERR("no query\n");
++    return;
++  }
+ 
+     TRACE("iface %p, asynchronous %p.\n", iface, asynchronous);
+ 
+@@ -1905,6 +1913,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_End(ID3D11DeviceContext1 *
+ {
+     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
+     HRESULT hr;
++  if (!query) {
++    ERR("no query\n");
++    return;
++  }
+ 
+     TRACE("iface %p, asynchronous %p.\n", iface, asynchronous);
+ 
+@@ -1924,7 +1936,7 @@ static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_GetData(ID3D11DeviceCon
+     TRACE("iface %p, asynchronous %p, data %p, data_size %u, data_flags %#x.\n",
+             iface, asynchronous, data, data_size, data_flags);
+ 
+-    if (!data && data_size)
++    if (!query || (!data && data_size))
+         return E_INVALIDARG;
+ 
+     wined3d_flags = wined3d_getdata_flags_from_d3d11_async_getdata_flags(data_flags);
+@@ -1966,6 +1978,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetShaderResources(ID3D1
+ {
+     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+     unsigned int i;
++  if (!device) {
++    ERR("no device\n");
++    return;
++  }
+ 
+     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
+ 
+@@ -1985,6 +2001,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetSamplers(ID3D11Device
+ {
+     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+     unsigned int i;
++  if (!device) {
++    ERR("no device\n");
++    return;
++  }
+ 
+     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
+             iface, start_slot, sampler_count, samplers);
+@@ -2007,6 +2027,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetRenderTargets(ID3D11D
+     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+     struct d3d_depthstencil_view *dsv;
+     unsigned int i;
++  if (!device) {
++    ERR("no device\n");
++    return;
++  }
+ 
+     TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p.\n",
+             iface, render_target_view_count, render_target_views, depth_stencil_view);
+@@ -2035,6 +2059,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetRenderTargetsAndUnord
+ {
+     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+     unsigned int i;
++  if (!device) {
++    ERR("no device\n");
++    return;
++  }
+ 
+     TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p, "
+             "unordered_access_view_start_slot %u, unordered_access_view_count %u, unordered_access_views %p, "
+diff --git a/dlls/d3d9/d3d9_main.c b/dlls/d3d9/d3d9_main.c
+index 9d0b1a7..f45b296 100644
+--- a/dlls/d3d9/d3d9_main.c
++++ b/dlls/d3d9/d3d9_main.c
+@@ -104,19 +104,31 @@ static HRESULT WINAPI uisv_DefaultUnimp()
+ 
+ static HRESULT WINAPI uisv_1par(DWORD p1)
+ {
+-    FIXME("uisv_4par called\n");
++  static int once = 0;
++  if (!once++) {
++
++    FIXME("uisv_1par called\n");
++  }
+     return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisv_4par(DWORD p1, DWORD p2, DWORD p3, DWORD p4)
+ {
++  static int once = 0;
++  if (!once++) {
++
+     FIXME("uisv_4par called\n");
++  }
+     return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisv_5par(DWORD p1, DWORD p2, DWORD p3, DWORD p4, DWORD p5)
+ {
++  static int once = 0;
++  if (!once++) {
+     FIXME("uisv_5par called\n");
++  }
++
+     return S_OK;
+ }
+ 
+diff --git a/dlls/hal/hal.c b/dlls/hal/hal.c
+index 6ef8765..5fd51b2 100644
+--- a/dlls/hal/hal.c
++++ b/dlls/hal/hal.c
+@@ -164,25 +164,51 @@ KIRQL WINAPI KeGetCurrentIrql(VOID)
+ 
+ UCHAR WINAPI READ_PORT_UCHAR(UCHAR *port)
+ {
++  static int once = 0;
++  if (!once++) {
+     FIXME("(%p) stub!\n", port);
++  }
+     return 0;
+ }
+ 
+ ULONG WINAPI READ_PORT_ULONG(ULONG *port)
+ {
+-    FIXME("(%p) stub!\n", port);
++  static int once = 0;
++  if (!once++) {
++    FIXME("(%p) stub!\n", port); //READ_PORT_ULONG (0xcf8) stub!
++  }
+     return 0;
+ }
+ 
+ void WINAPI WRITE_PORT_UCHAR(UCHAR *port, UCHAR value)
+ {
++  static int once = 0;
++  if (!once++) {
+     FIXME("(%p %d) stub!\n", port, value);
++  }
+ }
+ 
+ void WINAPI WRITE_PORT_ULONG(ULONG *port, ULONG value)
+ {
++  static int once = 0;
++  if (!once++) {
+     FIXME("(%p %d) stub!\n", port, value);
+-}
++    //WRITE_PORT_ULONG (0xcf8 -2147434496) stub! == 0xFFFFFFFF8000C000
++  }
++}
++/* This is ITE8712 chip!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2e 170) stub!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2e 2) stub!
++006f:fixme:ntoskrnl:READ_PORT_UCHAR (0x2f) stub!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2e 2) stub!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2f 2) stub!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2e 32) stub!
++006f:fixme:ntoskrnl:READ_PORT_UCHAR (0x2f) stub!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2e 85) stub!
++006f:fixme:ntoskrnl:WRITE_PORT_UCHAR (0x2e 32) stub!
++006f:fixme:ntoskrnl:READ_PORT_UCHAR (0x2f) stub!
++*/
++
+ #endif /* __i386__ || __arm__ || __arm64__ */
+ 
+ ULONG WINAPI HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber, PVOID Buffer, ULONG Length)
+@@ -194,8 +220,13 @@ ULONG WINAPI HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG Slo
+ 
+ ULONG WINAPI HalGetBusDataByOffset(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber, PVOID Buffer, ULONG Offset, ULONG Length)
+ {
++  static int once = 0;
++  if (!once++) {
+     FIXME("(%u %u %u %p %u %u) stub!\n", BusDataType, BusNumber, SlotNumber, Buffer, Offset, Length);
++
++  }
+     /* Claim that there is no such bus */
++  //006f:fixme:ntoskrnl:HalGetBusDataByOffset (4 0 9 0x7af674 0 4) stub!
+     return 0;
+ }
+ 
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index 3990ce3..cc68850 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -1262,7 +1262,8 @@ static HRESULT wined3d_so_statistics_query_create(struct wined3d_device *device,
+ 
+     if (WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0 <= type && type <= WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM3)
+         stream_idx = type - WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0;
+-    else if (type == WINED3D_QUERY_TYPE_SO_STATISTICS)
++    else if ((type == WINED3D_QUERY_TYPE_SO_STATISTICS) ||
++             (type == WINED3D_QUERY_TYPE_SO_OVERFLOW))
+         stream_idx = 0;
+     else
+         return WINED3DERR_NOTAVAILABLE;
+@@ -1357,7 +1358,8 @@ HRESULT CDECL wined3d_query_create(struct wined3d_device *device, enum wined3d_q
+         case WINED3D_QUERY_TYPE_TIMESTAMP_DISJOINT:
+         case WINED3D_QUERY_TYPE_TIMESTAMP_FREQ:
+             return wined3d_timestamp_disjoint_query_create(device, type, parent, parent_ops, query);
+-
++      case WINED3D_QUERY_TYPE_SO_OVERFLOW: //will use statistics
++ //         return WINED3D_OK;
+         case WINED3D_QUERY_TYPE_SO_STATISTICS:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM1:
