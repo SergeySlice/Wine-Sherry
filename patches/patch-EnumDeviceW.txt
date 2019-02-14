@@ -1,0 +1,31 @@
+diff --git a/dlls/user32/misc.c b/dlls/user32/misc.c
+index d28cd9f..0e50473 100644
+--- a/dlls/user32/misc.c
++++ b/dlls/user32/misc.c
+@@ -288,12 +288,22 @@ BOOL WINAPI EnumDisplayDevicesA( LPCSTR lpDevice, DWORD i, LPDISPLAY_DEVICEA lpD
+ BOOL WINAPI EnumDisplayDevicesW( LPCWSTR lpDevice, DWORD i, LPDISPLAY_DEVICEW lpDisplayDevice,
+                                  DWORD dwFlags )
+ {
+-    FIXME("(%s,%d,%p,0x%08x), stub!\n",debugstr_w(lpDevice),i,lpDisplayDevice,dwFlags);
+-
+-    if (i)
++    if (!lpDisplayDevice) {
++        return FALSE;
++        
++    }
++    
++    if (i) {
++        FIXME("(%s,%d,%p,0x%08x), stub!\n", debugstr_w(lpDevice), i, lpDisplayDevice, dwFlags);
+         return FALSE;
++    }
+ 
+-    memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));
++    if (lpDevice) {
++        strcpyW(lpDisplayDevice->DeviceName, lpDevice)
++    }
++    else {
++        memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));
++    }
+     memcpy(lpDisplayDevice->DeviceString, primary_device_string, sizeof(primary_device_string));
+   
+     lpDisplayDevice->StateFlags =
