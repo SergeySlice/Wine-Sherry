@@ -1,0 +1,179 @@
+From ec5dea9bb352ac88c6d1dd6b1138b018cb31696d Mon Sep 17 00:00:00 2001
+From: David Adam <david.adam.cnrs@gmail.com>
+Date: Tue, 22 Jan 2019 06:51:30 -1000
+Subject: [PATCH] ddraw: Sublevels mipmaps have their own mipmap counter
+
+Signed-off-by: David Adam <david.adam.cnrs@gmail.com>
+---
+ dlls/ddraw/surface.c      | 4 ++++
+ dlls/ddraw/tests/ddraw1.c | 8 +++++++-
+ dlls/ddraw/tests/ddraw2.c | 8 +++++++-
+ dlls/ddraw/tests/ddraw4.c | 8 +++++++-
+ dlls/ddraw/tests/ddraw7.c | 8 +++++++-
+ 5 files changed, 32 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/ddraw/surface.c b/dlls/ddraw/surface.c
+index 819044214d..a4c6178c9e 100644
+--- a/dlls/ddraw/surface.c
++++ b/dlls/ddraw/surface.c
+@@ -6339,6 +6339,10 @@ HRESULT ddraw_surface_create(struct ddraw *ddraw, const DDSURFACEDESC2 *surface_
+         {
+             mip = wined3d_texture_get_sub_resource_parent(wined3d_texture, i * levels + j);
+             mip_desc = &mip->surface_desc;
++            if (desc->ddsCaps.dwCaps & DDSCAPS_MIPMAP)
++            {
++                mip_desc->u2.dwMipMapCount = levels - j;
++            }
+ 
+             if (j)
+             {
+diff --git a/dlls/ddraw/tests/ddraw1.c b/dlls/ddraw/tests/ddraw1.c
+index d52fc313c4..9fb5eeaa7b 100644
+--- a/dlls/ddraw/tests/ddraw1.c
++++ b/dlls/ddraw/tests/ddraw1.c
+@@ -5405,6 +5405,7 @@ static void test_mipmap(void)
+     HRESULT hr;
+     DDSCAPS caps = {DDSCAPS_COMPLEX};
+     DDCAPS hal_caps;
++    DWORD original_mipmap_count;
+ 
+     static const struct
+     {
+@@ -5468,7 +5469,8 @@ static void test_mipmap(void)
+         ok(U2(surface_desc).dwMipMapCount == tests[i].mipmap_count_out,
+                 "Test %u: Got unexpected mipmap count %u.\n", i, U2(surface_desc).dwMipMapCount);
+ 
+-        if (U2(surface_desc).dwMipMapCount > 1)
++        original_mipmap_count = U2(surface_desc).dwMipMapCount;
++        if (original_mipmap_count > 1)
+         {
+             hr = IDirectDrawSurface_GetAttachedSurface(surface, &caps, &surface2);
+             ok(SUCCEEDED(hr), "Test %u: Failed to get attached surface, hr %#x.\n", i, hr);
+@@ -5477,10 +5479,14 @@ static void test_mipmap(void)
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface_Lock(surface, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count,
++                    "Test %u: unexpected change of mipmap count %u.\n", i, surface_desc.dwMipMapCount);
+             memset(&surface_desc, 0, sizeof(surface_desc));
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface_Lock(surface2, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count - 1,
++                    "Test %u: Child mipmap count unexpected %u\n", i, surface_desc.dwMipMapCount);
+             IDirectDrawSurface_Unlock(surface2, NULL);
+             IDirectDrawSurface_Unlock(surface, NULL);
+ 
+diff --git a/dlls/ddraw/tests/ddraw2.c b/dlls/ddraw/tests/ddraw2.c
+index bacc35d31d..0739a3ea37 100644
+--- a/dlls/ddraw/tests/ddraw2.c
++++ b/dlls/ddraw/tests/ddraw2.c
+@@ -6431,6 +6431,7 @@ static void test_mipmap(void)
+     HRESULT hr;
+     DDSCAPS caps = {DDSCAPS_COMPLEX};
+     DDCAPS hal_caps;
++    DWORD original_mipmap_count;
+ 
+     static const struct
+     {
+@@ -6498,7 +6499,8 @@ static void test_mipmap(void)
+         ok(U2(surface_desc).dwMipMapCount == tests[i].mipmap_count_out,
+                 "Test %u: Got unexpected mipmap count %u.\n", i, U2(surface_desc).dwMipMapCount);
+ 
+-        if (U2(surface_desc).dwMipMapCount > 1)
++        original_mipmap_count = U2(surface_desc).dwMipMapCount;
++        if (original_mipmap_count > 1)
+         {
+             hr = IDirectDrawSurface2_GetAttachedSurface(surface, &caps, &surface2);
+             ok(SUCCEEDED(hr), "Test %u: Failed to get attached surface, hr %#x.\n", i, hr);
+@@ -6507,10 +6509,14 @@ static void test_mipmap(void)
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface2_Lock(surface, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count,
++                    "Test %u: unexpected change of mipmap count %u.\n", i, surface_desc.dwMipMapCount);
+             memset(&surface_desc, 0, sizeof(surface_desc));
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface2_Lock(surface2, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count - 1,
++                    "Test %u: Child mipmap count unexpected %u\n", i, surface_desc.dwMipMapCount);
+             IDirectDrawSurface2_Unlock(surface2, NULL);
+             IDirectDrawSurface2_Unlock(surface, NULL);
+ 
+diff --git a/dlls/ddraw/tests/ddraw4.c b/dlls/ddraw/tests/ddraw4.c
+index 0066bf770f..9f450b49d5 100644
+--- a/dlls/ddraw/tests/ddraw4.c
++++ b/dlls/ddraw/tests/ddraw4.c
+@@ -7963,6 +7963,7 @@ static void test_mipmap(void)
+     HRESULT hr;
+     DDSCAPS2 caps = {DDSCAPS_COMPLEX, 0, 0, {0}};
+     DDCAPS hal_caps;
++    DWORD original_mipmap_count;
+ 
+     static const struct
+     {
+@@ -8026,7 +8027,8 @@ static void test_mipmap(void)
+         ok(U2(surface_desc).dwMipMapCount == tests[i].mipmap_count_out,
+                 "Test %u: Got unexpected mipmap count %u.\n", i, U2(surface_desc).dwMipMapCount);
+ 
+-        if (U2(surface_desc).dwMipMapCount > 1)
++        original_mipmap_count = U2(surface_desc).dwMipMapCount;
++        if (original_mipmap_count > 1)
+         {
+             hr = IDirectDrawSurface4_GetAttachedSurface(surface, &caps, &surface2);
+             ok(SUCCEEDED(hr), "Test %u: Failed to get attached surface, hr %#x.\n", i, hr);
+@@ -8035,10 +8037,14 @@ static void test_mipmap(void)
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface4_Lock(surface, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count,
++                    "Test %u: unexpected change of mipmap count %u.\n", i, surface_desc.dwMipMapCount);
+             memset(&surface_desc, 0, sizeof(surface_desc));
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface4_Lock(surface2, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count - 1,
++                    "Test %u: Child mipmap count unexpected %u\n", i, surface_desc.dwMipMapCount);
+             IDirectDrawSurface4_Unlock(surface2, NULL);
+             IDirectDrawSurface4_Unlock(surface, NULL);
+ 
+diff --git a/dlls/ddraw/tests/ddraw7.c b/dlls/ddraw/tests/ddraw7.c
+index 1f57420250..f70383fbd3 100644
+--- a/dlls/ddraw/tests/ddraw7.c
++++ b/dlls/ddraw/tests/ddraw7.c
+@@ -7797,6 +7797,7 @@ static void test_mipmap(void)
+     HRESULT hr;
+     DDSCAPS2 caps = {DDSCAPS_COMPLEX, 0, 0, {0}};
+     DDCAPS hal_caps;
++    DWORD original_mipmap_count;
+ 
+     static const struct
+     {
+@@ -7861,7 +7862,8 @@ static void test_mipmap(void)
+         ok(U2(surface_desc).dwMipMapCount == tests[i].mipmap_count_out,
+                 "Test %u: Got unexpected mipmap count %u.\n", i, U2(surface_desc).dwMipMapCount);
+ 
+-        if (U2(surface_desc).dwMipMapCount > 1)
++        original_mipmap_count = U2(surface_desc).dwMipMapCount;
++        if (original_mipmap_count > 1)
+         {
+             hr = IDirectDrawSurface7_GetAttachedSurface(surface, &caps, &surface2);
+             ok(SUCCEEDED(hr), "Test %u: Failed to get attached surface, hr %#x.\n", i, hr);
+@@ -7870,10 +7872,14 @@ static void test_mipmap(void)
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface7_Lock(surface, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count,
++                    "Test %u: unexpected change of mipmap count %u.\n", i, surface_desc.dwMipMapCount);
+             memset(&surface_desc, 0, sizeof(surface_desc));
+             surface_desc.dwSize = sizeof(surface_desc);
+             hr = IDirectDrawSurface7_Lock(surface2, NULL, &surface_desc, 0, NULL);
+             ok(SUCCEEDED(hr), "Test %u: Failed to lock surface, hr %#x.\n", i, hr);
++            ok(surface_desc.dwMipMapCount == original_mipmap_count - 1,
++                    "Test %u: Child mipmap count unexpected %u\n", i, surface_desc.dwMipMapCount);
+             IDirectDrawSurface7_Unlock(surface2, NULL);
+             IDirectDrawSurface7_Unlock(surface, NULL);
+ 
+-- 
+2.19.1

@@ -1,0 +1,25 @@
+diff --git a/dlls/ddraw/viewport.c b/dlls/ddraw/viewport.c
+index 6364c2114f..6865822faa 100644
+--- a/dlls/ddraw/viewport.c
++++ b/dlls/ddraw/viewport.c
+@@ -656,13 +656,19 @@ static HRESULT WINAPI d3d_viewport_Clear(IDirect3DViewport3 *iface,
+     HRESULT hr;
+     IDirect3DViewport3 *current_viewport;
+     IDirect3DDevice3 *d3d_device3;
++    D3DRECT full_rect;
+ 
+     TRACE("iface %p, rect_count %u, rects %p, flags %#x.\n", iface, rect_count, rects, flags);
+ 
+     if (!rects || !rect_count)
+     {
+         WARN("rect_count = %u, rects = %p, ignoring clear\n", rect_count, rects);
+-        return D3D_OK;
++        full_rect.u1.x1 = 0;
++        full_rect.u2.y1 = 0;
++        full_rect.u3.x2 = This->viewports.vp1.dwWidth;
++        full_rect.u4.y2 = This->viewports.vp1.dwHeight;
++        rect_count = 1;
++        rects = &full_rect;
+     }
+ 
+     if (This->active_device == NULL) {

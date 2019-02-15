@@ -1,0 +1,60 @@
+From 962d672925f05aa6aa3a8da53dd7197b964e3f99 Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Mon, 14 Jan 2019 21:27:14 +0300
+Subject: [PATCH] d3d9: Use 8 bit value for D3DRS_ALPHAREF.
+
+Wine-Bug: https://bugs.winehq.org/show_bug.cgi?id=38138
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/d3d9/device.c       | 3 +++
+ dlls/d3d9/tests/visual.c | 6 +++---
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/d3d9/device.c b/dlls/d3d9/device.c
+index 683305c480..6355da4825 100644
+--- a/dlls/d3d9/device.c
++++ b/dlls/d3d9/device.c
+@@ -2258,6 +2258,9 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH d3d9_device_SetRenderState(IDirect3DDevi
+ 
+     TRACE("iface %p, state %#x, value %#x.\n", iface, state, value);
+ 
++    if (state == D3DRS_ALPHAREF)
++        value &= 0xff;
++
+     if (state == D3DRS_BLENDFACTOR)
+     {
+         wined3d_color_from_d3dcolor(&factor, value);
+diff --git a/dlls/d3d9/tests/visual.c b/dlls/d3d9/tests/visual.c
+index 8da5b04ce6..4d72f119e9 100644
+--- a/dlls/d3d9/tests/visual.c
++++ b/dlls/d3d9/tests/visual.c
+@@ -13694,7 +13694,7 @@ static void alphatest_test(void)
+ 
+             hr = IDirect3DDevice9_Clear(device, 0, NULL, D3DCLEAR_TARGET, ALPHATEST_FAILED, 0.0, 0);
+             ok(hr == D3D_OK, "IDirect3DDevice9_Clear failed with 0x%08x\n", hr);
+-            hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHAREF, 0x90);
++            hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHAREF, 0xff90);
+             ok(hr == D3D_OK, "IDirect3DDevice9_SetRenderState failed with 0x%08x\n", hr);
+             hr = IDirect3DDevice9_BeginScene(device);
+             ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
+@@ -13710,7 +13710,7 @@ static void alphatest_test(void)
+ 
+             hr = IDirect3DDevice9_Clear(device, 0, NULL, D3DCLEAR_TARGET, ALPHATEST_FAILED, 0.0, 0);
+             ok(hr == D3D_OK, "IDirect3DDevice9_Clear failed with 0x%08x\n", hr);
+-            hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHAREF, 0x80);
++            hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHAREF, 0xff80);
+             ok(hr == D3D_OK, "IDirect3DDevice9_SetRenderState failed with 0x%08x\n", hr);
+             hr = IDirect3DDevice9_BeginScene(device);
+             ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
+@@ -13726,7 +13726,7 @@ static void alphatest_test(void)
+ 
+             hr = IDirect3DDevice9_Clear(device, 0, NULL, D3DCLEAR_TARGET, ALPHATEST_FAILED, 0.0, 0);
+             ok(hr == D3D_OK, "IDirect3DDevice9_Clear failed with 0x%08x\n", hr);
+-            hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHAREF, 0x70);
++            hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHAREF, 0xff70);
+             ok(hr == D3D_OK, "IDirect3DDevice9_SetRenderState failed with 0x%08x\n", hr);
+             hr = IDirect3DDevice9_BeginScene(device);
+             ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
+-- 
+2.20.1
+

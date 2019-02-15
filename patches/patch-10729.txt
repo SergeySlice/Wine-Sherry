@@ -1,0 +1,18 @@
+/ *****************************************************************************/
+static D3DPICKRECORD FakeRecord = { 0x2, 0, 0x1, 0};
+
+static HRESULT WINAPI d3d_device1_GetPickRecords(IDirect3DDevice *iface,
+        DWORD *count, D3DPICKRECORD *records)
+{
+    FIXME("iface %p, count %p, records %p stub!\n", iface, count, records);
+    *count = 1;
+    
+    if (!records) {
+        return DDERR_INVALIDPARAMS;
+    }
+    *records = FakeRecord;
+
+    return D3D_OK;
+}
+
+/*****************************************************************************/

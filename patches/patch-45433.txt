@@ -1,0 +1,97 @@
+commit a4994edb8c03c2460054d48629ed8d2d573f5b5b
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Wed Feb 13 20:19:59 2019 +0300
+
+    patch 45433 and 38785cor
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/dxgi/output.c b/dlls/dxgi/output.c
+index bf0a415..2501cc4 100644
+--- a/dlls/dxgi/output.c
++++ b/dlls/dxgi/output.c
+@@ -166,6 +166,7 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDesc(IDXGIOutput4 *iface, DXGI_O
+     return S_OK;
+ }
+ 
++#define MAX_VIDEOMODE_COUNT 30
+ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput4 *iface,
+         DXGI_FORMAT format, UINT flags, UINT *mode_count, DXGI_MODE_DESC *desc)
+ {
+@@ -173,6 +174,9 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput4 *if
+     enum wined3d_format_id wined3d_format;
+     unsigned int i, max_count;
+     struct wined3d *wined3d;
++    struct wined3d_display_mode modes[MAX_VIDEOMODE_COUNT];
++    unsigned int pos[MAX_VIDEOMODE_COUNT];
++    unsigned int j;
+ 
+     FIXME("iface %p, format %s, flags %#x, mode_count %p, desc %p partial stub!\n",
+             iface, debug_dxgi_format(format), flags, mode_count, desc);
+@@ -210,19 +214,41 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput4 *if
+ 
+     for (i = 0; i < *mode_count; ++i)
+     {
+-        struct wined3d_display_mode mode;
+         HRESULT hr;
+ 
+         hr = wined3d_enum_adapter_modes(wined3d, output->adapter->ordinal, wined3d_format,
+-                WINED3D_SCANLINE_ORDERING_UNKNOWN, i, &mode);
++                WINED3D_SCANLINE_ORDERING_UNKNOWN, i, &modes[i]);
+         if (FAILED(hr))
+         {
+             WARN("EnumAdapterModes failed, hr %#x.\n", hr);
+             wined3d_mutex_unlock();
+             return hr;
+         }
+-
+-        dxgi_mode_from_wined3d(&desc[i], &mode);
++    }
++// initial positions
++    for (i = 0; i < *mode_count; ++i) pos[i] = i;
++// sort ascending
++    for (i = 0; i < *mode_count - 1; ++i)
++    {
++        for (j = i + 1; j < *mode_count; ++j)
++        {
++            unsigned int k;
++            if ((modes[pos[i]].height > modes[pos[j]].height) ||
++                ((modes[pos[i]].height == modes[pos[j]].height) &&
++                 (modes[pos[i]].width > modes[pos[j]].width)) ||
++                ((modes[pos[i]].height == modes[pos[j]].height) &&
++                 (modes[pos[i]].width == modes[pos[j]].width) &&
++                 (modes[pos[i]].refresh_rate > modes[pos[j]].refresh_rate))) {
++                    k = pos[i];
++                    pos[i] = pos[j];
++                    pos[j] = k;
++                }
++        }
++    }
++//report sorted modes
++    for (i = 0; i < *mode_count; ++i)
++    {
++        dxgi_mode_from_wined3d(&desc[i], &modes[pos[i]]);
+     }
+     wined3d_mutex_unlock();
+ 
+diff --git a/dlls/wined3d/query.c b/dlls/wined3d/query.c
+index a0a47a0..cc68850 100644
+--- a/dlls/wined3d/query.c
++++ b/dlls/wined3d/query.c
+@@ -220,7 +220,6 @@ static enum wined3d_fence_result wined3d_fence_test(const struct wined3d_fence *
+                 break;
+ 
+             case GL_TIMEOUT_EXPIRED:
+-            case GL_TIMEOUT_EXPIRED_APPLE:
+                 ret = WINED3D_FENCE_WAITING;
+                 break;
+ 
+@@ -304,7 +303,7 @@ enum wined3d_fence_result wined3d_fence_wait(const struct wined3d_fence *fence,
+             case GL_CONDITION_SATISFIED:
+                 ret = WINED3D_FENCE_OK;
+                 break;
+-          case GL_TIMEOUT_EXPIRED_APPLE:
++            case GL_TIMEOUT_EXPIRED:
+                 ret = WINED3D_FENCE_NOT_STARTED;
+                 break;
+ 

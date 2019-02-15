@@ -1,0 +1,37 @@
+diff --git a/dlls/strmbase/window.c b/dlls/strmbase/window.c
+index 955b6d9233..85d57130f8 100644
+--- a/dlls/strmbase/window.c
++++ b/dlls/strmbase/window.c
+@@ -534,20 +534,13 @@ HRESULT WINAPI BaseControlWindowImpl_get_Height(IVideoWindow *iface, LONG *pHeig
+ HRESULT WINAPI BaseControlWindowImpl_put_Owner(IVideoWindow *iface, OAHWND Owner)
+ {
+     BaseControlWindow*  This = impl_from_IVideoWindow(iface);
++    HWND window = This->baseWindow.hWnd;
+ 
+     TRACE("(%p/%p)->(%08x)\n", This, iface, (DWORD) Owner);
+ 
+     This->hwndOwner = (HWND)Owner;
+-    SetParent(This->baseWindow.hWnd, This->hwndOwner);
+-    if (This->baseWindow.WindowStyles & WS_CHILD)
+-    {
+-        LONG old = GetWindowLongW(This->baseWindow.hWnd, GWL_STYLE);
+-        if (old != This->baseWindow.WindowStyles)
+-        {
+-            SetWindowLongW(This->baseWindow.hWnd, GWL_STYLE, This->baseWindow.WindowStyles);
+-            SetWindowPos(This->baseWindow.hWnd,0,0,0,0,0,SWP_FRAMECHANGED|SWP_NOSIZE|SWP_NOZORDER);
+-        }
+-    }
++    SetWindowLongPtrW(window, GWL_STYLE, GetWindowLongPtrW(window, GWL_STYLE) | WS_CHILD);
++    SetParent(window, This->hwndOwner);
+ 
+     return S_OK;
+ }
+@@ -649,7 +642,7 @@ HRESULT WINAPI BaseControlWindowImpl_SetWindowPosition(IVideoWindow *iface, LONG
+ 
+     TRACE("(%p/%p)->(%d, %d, %d, %d)\n", This, iface, Left, Top, Width, Height);
+ 
+-    if (!SetWindowPos(This->baseWindow.hWnd, NULL, Left, Top, Width, Height, SWP_NOZORDER))
++    if (!SetWindowPos(This->baseWindow.hWnd, NULL, Left, Top, Width, Height, SWP_NOACTIVATE | SWP_NOZORDER))
+         return E_FAIL;
+ 
+     This->baseWindow.Width = Width;

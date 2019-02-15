@@ -1,0 +1,29 @@
+commit 8ac45ea601972905a758fd808e0b7617796f30d0
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Mon Feb 11 20:17:42 2019 +0300
+
+    patch 46618 by MB
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/device.c b/dlls/wined3d/device.c
+index 3a98d54..f937125 100644
+--- a/dlls/wined3d/device.c
++++ b/dlls/wined3d/device.c
+@@ -4915,6 +4915,7 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
+             wined3d_texture_decref(device->cursor_texture);
+             device->cursor_texture = NULL;
+         }
++        wined3d_stateblock_state_cleanup(&device->stateblock_state);
+         state_unbind_resources(&device->state);
+     }
+ 
+@@ -5103,7 +5104,7 @@ HRESULT CDECL wined3d_device_reset(struct wined3d_device *device,
+         }
+         wined3d_cs_emit_reset_state(device->cs);
+         state_cleanup(&device->state);
+-        wined3d_stateblock_state_cleanup(&device->stateblock_state);
++
+ 
+         if (device->d3d_initialized)
+             wined3d_device_delete_opengl_contexts(device);
