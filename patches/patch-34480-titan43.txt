@@ -1,0 +1,158 @@
+From 4edce522b7b8840aa41554b5645c7777986ed69d Mon Sep 17 00:00:00 2001
+From: Christian Costa <titan.costa@gmail.com>
+Date: Sat, 24 Jan 2015 17:38:26 +0100
+Subject: wined3d: Alocate/Release contiguous texture memory whenever it's
+ needed.
+
+---
+ dlls/wined3d/resource.c        | 60 +++++++++++++++++++++++++++++++++++++++++-
+ dlls/wined3d/texture.c         | 20 ++++++++++++++
+ dlls/wined3d/wined3d_main.c    |  4 +--
+ dlls/wined3d/wined3d_private.h |  2 ++
+ 4 files changed, 83 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/wined3d/resource.c b/dlls/wined3d/resource.c
+index 9a6a836..90c08c5 100644
+--- a/dlls/wined3d/resource.c
++++ b/dlls/wined3d/resource.c
+@@ -123,6 +123,7 @@ HRESULT resource_init(struct wined3d_resource *resource, struct wined3d_device *
+             if ((usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_mem_tex)
+             {
+                 resource->managed = TRUE;
++                resource->freed = FALSE;
+                 break;
+             }
+         default:
+@@ -232,6 +233,55 @@ void CDECL wined3d_resource_get_desc(const struct wined3d_resource *resource, st
+     desc->size = resource->size;
+ }
+ 
++BOOL texture_manage_memory(struct wined3d_resource *resource, BOOL alloc)
++{
++    struct wined3d_texture *texture;
++    UINT sub_count;
++    UINT i;
++    BYTE *current_heap;
++
++    if (resource->type == WINED3D_RTYPE_SURFACE)
++        texture = ((struct wined3d_surface*)resource)->container;
++    else
++        texture = ((struct wined3d_volume*)resource)->container;
++
++    FIXME("(%p %u %p %u %p\n", resource, alloc, texture, texture->allocated_subresource, texture->resource.heap_memory);
++
++    sub_count = texture->level_count * texture->layer_count;
++
++    if (alloc)
++    {
++        if (!texture->allocated_subresource && !texture->resource.heap_memory)
++        {
++            FIXME("Allocate mipchain (%p)\n", texture);
++            if (!wined3d_resource_allocate_sysmem(&texture->resource))
++                return FALSE;
++            FIXME("=> %p\n", texture->resource.heap_memory);
++            current_heap = texture->resource.heap_memory;
++            for (i = 0; i < sub_count; i++)
++            {
++                texture->sub_resources[i]->heap_memory = current_heap;
++                current_heap += texture->sub_resources[i]->size;
++                FIXME("=> size %u\n", texture->sub_resources[i]->size);
++            }
++        }
++        texture->allocated_subresource++;
++        resource->freed = FALSE;
++    }
++    else
++    {
++        if (!--texture->allocated_subresource)
++        {
++            FIXME("Free mipchain (%p)\n", texture);
++            wined3d_resource_free_sysmem(&texture->resource);
++            for (i = 0; i < sub_count; i++)
++                texture->sub_resources[i]->heap_memory = NULL;
++        }
++    }
++
++    return TRUE;
++}
++
+ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource)
+ {
+     void **p;
+@@ -239,7 +289,7 @@ BOOL wined3d_resource_allocate_sysmem(struct wined3d_resource *resource)
+     void *mem;
+ 
+     if (resource->managed)
+-        return TRUE;
++        return texture_manage_memory(resource, TRUE);
+ 
+     if (!(mem = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, resource->size + align)))
+         return FALSE;
+@@ -264,6 +314,14 @@ void wined3d_resource_free_sysmem(struct wined3d_resource *resource)
+         HeapFree(GetProcessHeap(), 0, *(--p));
+         resource->heap_memory = NULL;
+     }
++    else
++    {
++        /* Apparently this fonction can be called more that once between texture life cyce 
++           (not only at the end for clean-up). We need then another flag to avoid decrementing the counter several times) */
++        if (!resource->freed)
++            texture_manage_memory(resource, FALSE);
++        resource->freed = TRUE;
++    }
+ }
+ 
+ DWORD wined3d_resource_sanitize_map_flags(const struct wined3d_resource *resource, DWORD flags)
+diff --git a/dlls/wined3d/texture.c b/dlls/wined3d/texture.c
+index a930b21..b777f02 100644
+--- a/dlls/wined3d/texture.c
++++ b/dlls/wined3d/texture.c
+@@ -53,8 +53,11 @@ static HRESULT wined3d_texture_init(struct wined3d_texture *texture, const struc
+     }
+ 
+     if ((desc->usage & WINED3DUSAGE_TEXTURE) && wined3d_settings.contiguous_mem_tex)
++    {
+         surfaces_size = wined3d_format_calculate_size_total(format, device->surface_alignment, desc->width,
+                 desc->height, desc->depth, level_count, desc->resource_type);
++        texture->allocated_subresource = level_count * layer_count;
++    }
+ 
+     if (FAILED(hr = resource_init(&texture->resource, device, desc->resource_type, format,
+             desc->multisample_type, desc->multisample_quality, desc->usage, desc->pool,
+diff --git a/dlls/wined3d/wined3d_main.c b/dlls/wined3d/wined3d_main.c
+index 8a0f633..9f25460 100644
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -309,8 +309,8 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
+         {
+             if (!strcmp(buffer,"enabled"))
+             {
+-                WARN_(winediag)("Enabling allocation of contiguous memory for texture surfaces.\n");
+-                WARN_(winediag)("System memory usage is not optimized yet. Expect OOM to happen more quickly.\n");
++                FIXME_(winediag)("Enabling allocation of contiguous memory for texture surfaces.\n");
++                FIXME_(winediag)("System memory usage is not optimized yet. Expect OOM to happen more quickly.\n");
+                 wined3d_settings.contiguous_mem_tex = TRUE;
+             }
+         }
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index c118c86..0bfb2c8 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -2084,6 +2084,7 @@ struct wined3d_resource
+     DWORD usage;
+     enum wined3d_pool pool;
+     BOOL managed;
++    BOOL freed;
+     DWORD access_flags;
+     DWORD draw_binding;
+     DWORD map_binding;
+@@ -2195,6 +2196,7 @@ struct wined3d_texture
+     const struct min_lookup *min_mip_lookup;
+     const GLenum *mag_lookup;
+     GLenum target;
++    UINT allocated_subresource;
+ 
+     /* Color keys for DDraw */
+     struct wined3d_color_key dst_blt_color_key;
+-- 
+2.1.0

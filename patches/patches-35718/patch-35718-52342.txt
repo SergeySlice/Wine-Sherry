@@ -1,0 +1,69 @@
+diff -urN wine-1.7.48.orig/include/wine/wgl_driver.h wine-1.7.48/include/wine/wgl_driver.h
+--- wine-1.7.48.orig/include/wine/wgl_driver.h	2015-08-20 19:48:36.883428156 +0300
++++ wine-1.7.48/include/wine/wgl_driver.h	2015-08-20 19:49:06.879426310 +0300
+@@ -11,6 +11,7 @@
+ 
+ struct wgl_context;
+ struct wgl_pbuffer;
++struct wgl_surface;
+ 
+ struct opengl_funcs
+ {
+@@ -2887,7 +2888,9 @@
+         BOOL       (WINE_GLAPI *p_wglChoosePixelFormatARB)(HDC,const int*,const FLOAT*,UINT,int*,UINT*);
+         struct wgl_context * (WINE_GLAPI *p_wglCreateContextAttribsARB)(HDC,struct wgl_context *,const int*);
+         struct wgl_pbuffer * (WINE_GLAPI *p_wglCreatePbufferARB)(HDC,int,int,int,const int*);
++        struct wgl_surface * (WINE_GLAPI *p_wglCreateSurfaceWINE)(HDC, HWND);
+         BOOL       (WINE_GLAPI *p_wglDestroyPbufferARB)(struct wgl_pbuffer *);
++        BOOL       (WINE_GLAPI *p_wglDestroySurfaceWINE)(struct wgl_surface *);
+         void       (WINE_GLAPI *p_wglFreeMemoryNV)(void*);
+         HDC        (WINE_GLAPI *p_wglGetCurrentReadDCARB)(void);
+         const char* (WINE_GLAPI *p_wglGetExtensionsStringARB)(HDC);
+@@ -2895,10 +2898,12 @@
+         HDC        (WINE_GLAPI *p_wglGetPbufferDCARB)(struct wgl_pbuffer *);
+         BOOL       (WINE_GLAPI *p_wglGetPixelFormatAttribfvARB)(HDC,int,int,UINT,const int*,FLOAT*);
+         BOOL       (WINE_GLAPI *p_wglGetPixelFormatAttribivARB)(HDC,int,int,UINT,const int*,int*);
++        HDC        (WINE_GLAPI *p_wglGetSurfaceDCWINE)(struct wgl_surface *);
+         int        (WINE_GLAPI *p_wglGetSwapIntervalEXT)(void);
+         BOOL       (WINE_GLAPI *p_wglMakeContextCurrentARB)(HDC,HDC,struct wgl_context *);
+         BOOL       (WINE_GLAPI *p_wglQueryPbufferARB)(struct wgl_pbuffer *,int,int*);
+         int        (WINE_GLAPI *p_wglReleasePbufferDCARB)(struct wgl_pbuffer *,HDC);
++        BOOL       (WINE_GLAPI *p_wglReleaseSurfaceDCWINE)(struct wgl_surface *,HDC);
+         BOOL       (WINE_GLAPI *p_wglReleaseTexImageARB)(struct wgl_pbuffer *,int);
+         BOOL       (WINE_GLAPI *p_wglSetPbufferAttribARB)(struct wgl_pbuffer *,const int*);
+         BOOL       (WINE_GLAPI *p_wglSetPixelFormatWINE)(HDC,int);
+@@ -3245,6 +3250,6 @@
+     USE_GL_FUNC(glViewport)
+ 
+ extern struct opengl_funcs * CDECL __wine_get_wgl_driver( HDC hdc, UINT version );
+-extern BOOL CDECL __wine_set_pixel_format( HWND hwnd, int format );
++extern BOOL CDECL __wine_track_gl_surfaces( HWND hwnd, int change );
+ 
+ #endif /* __WINE_WGL_DRIVER_H */
+diff -urN wine-1.7.48.orig/server/window.c wine-1.7.48/server/window.c
+--- wine-1.7.48.orig/server/window.c	2015-08-20 19:48:37.167428314 +0300
++++ wine-1.7.48/server/window.c	2015-08-20 19:49:06.880426517 +0300
+@@ -2220,6 +2220,7 @@
+     struct window *previous = NULL;
+     struct window *top, *win = get_window( req->handle );
+     unsigned int flags = req->swp_flags;
++    unsigned int old_pixel_format;
+ 
+     if (!win) return;
+     if (!win->parent) flags |= SWP_NOZORDER;  /* no Z order for the desktop */
+@@ -2274,6 +2275,7 @@
+         mirror_rect( &win->parent->client_rect, &client_rect );
+     }
+ 
++    old_pixel_format = win->paint_flags & PAINT_HAS_PIXEL_FORMAT;
+     win->paint_flags = (win->paint_flags & ~PAINT_CLIENT_FLAGS) | (req->paint_flags & PAINT_CLIENT_FLAGS);
+     if (win->paint_flags & PAINT_HAS_PIXEL_FORMAT) update_pixel_format_flags( win );
+ 
+@@ -2296,7 +2298,7 @@
+     top = get_top_clipping_window( win );
+     if (is_visible( top ) &&
+         (top->paint_flags & PAINT_HAS_SURFACE) &&
+-        (top->paint_flags & (PAINT_HAS_PIXEL_FORMAT | PAINT_PIXEL_FORMAT_CHILD)))
++        (top->paint_flags & (PAINT_HAS_PIXEL_FORMAT | PAINT_PIXEL_FORMAT_CHILD) || old_pixel_format))
+         reply->surface_win = top->handle;
+ }

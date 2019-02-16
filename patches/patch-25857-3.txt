@@ -1,0 +1,565 @@
+From e61dd5ef3843fa4710c959a86bc3dfcc8eec9081 Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Wed, 9 Mar 2016 15:30:35 +0300
+Subject: [PATCH 3/9] d3dx9: implement fxlc constants (expressions) in effect.
+
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/d3dx9_36/d3dx9_private.h |   6 +
+ dlls/d3dx9_36/effect.c        |  66 +++++---
+ dlls/d3dx9_36/preshader.c     | 365 ++++++++++++++++++++++++++++++++++++++++++
+ dlls/d3dx9_36/tests/effect.c  |   4 +-
+ 4 files changed, 413 insertions(+), 28 deletions(-)
+
+diff --git a/dlls/d3dx9_36/d3dx9_private.h b/dlls/d3dx9_36/d3dx9_private.h
+index 5ba93ac..97d9544 100644
+--- a/dlls/d3dx9_36/d3dx9_private.h
++++ b/dlls/d3dx9_36/d3dx9_private.h
+@@ -143,5 +143,11 @@ struct d3dx_parameter *get_parameter_by_name(struct d3dx9_base_effect *base,
+ HRESULT d3dx_create_param_eval(struct d3dx9_base_effect *base_effect, void *byte_code,
+         unsigned int byte_code_size, D3DXPARAMETER_TYPE type, struct d3dx_param_eval **peval) DECLSPEC_HIDDEN;
+ void d3dx_free_param_eval(struct d3dx_param_eval *peval) DECLSPEC_HIDDEN;
++HRESULT d3dx_evaluate_parameter(struct d3dx_param_eval *peval,
++        struct d3dx_parameter *param, void **param_value) DECLSPEC_HIDDEN;
++HRESULT d3dx_param_eval_set_shader_constants(struct IDirect3DDevice9 *device,
++        struct d3dx_param_eval *peval) DECLSPEC_HIDDEN;
++HRESULT d3dx_param_eval_get_shader_parameters(struct d3dx_param_eval *peval, struct d3dx_parameter ***param,
++        unsigned int *nparam, D3DXCONSTANT_DESC **cdesc) DECLSPEC_HIDDEN;
+ 
+ #endif /* __WINE_D3DX9_PRIVATE_H */
+diff --git a/dlls/d3dx9_36/effect.c b/dlls/d3dx9_36/effect.c
+index 1a842ee..d9e585a 100644
+--- a/dlls/d3dx9_36/effect.c
++++ b/dlls/d3dx9_36/effect.c
+@@ -2493,13 +2493,19 @@ static HRESULT d3dx9_base_effect_set_array_range(struct d3dx9_base_effect *base,
+ static HRESULT d3dx9_get_param_value_ptr(struct ID3DXEffectImpl *effect, struct d3dx_pass *pass,
+         struct d3dx_state *state, void **param_value, struct d3dx_parameter **out_param)
+ {
+-    struct d3dx_parameter *param;
+-    param = state->parameter.referenced_param ? state->parameter.referenced_param : &state->parameter;
++    struct d3dx_parameter *param = &state->parameter;
++
++    *param_value = param->data;
++    *out_param = param;
+ 
+     switch (state->type)
+     {
+         case ST_CONSTANT:
++            *param_value = param->data;
++            *out_param = param;
++            return D3D_OK;
+         case ST_PARAMETER:
++            param = param->referenced_param;
+             *param_value = param->data;
+             *out_param = param;
+             return D3D_OK;
+@@ -2507,8 +2513,16 @@ static HRESULT d3dx9_get_param_value_ptr(struct ID3DXEffectImpl *effect, struct
+             FIXME("Array selector.\n");
+             break;
+         case ST_FXLC:
+-            FIXME("FXLC not supported yet.\n");
+-            break;
++            if (param->param_eval)
++            {
++                *out_param = param;
++                return d3dx_evaluate_parameter(param->param_eval, param, param_value);
++            }
++            else
++            {
++                FIXME("No preshader for FXLC parameter.\n");
++                break;
++            }
+     }
+     *param_value = NULL;
+     *out_param = NULL;
+@@ -2524,19 +2538,19 @@ static void d3dx9_set_light_parameter(enum LIGHT_TYPE op, D3DLIGHT9 *light, void
+     }
+     light_tbl[] =
+     {
+-       {FIELD_OFFSET(D3DLIGHT9, Type),         "LC_TYPE"},
+-       {FIELD_OFFSET(D3DLIGHT9, Diffuse),      "LT_DIFFUSE"},
+-       {FIELD_OFFSET(D3DLIGHT9, Specular),     "LT_SPECULAR"},
+-       {FIELD_OFFSET(D3DLIGHT9, Ambient),      "LT_AMBIENT"},
+-       {FIELD_OFFSET(D3DLIGHT9, Position),     "LT_POSITION"},
+-       {FIELD_OFFSET(D3DLIGHT9, Direction),    "LT_DIRECTION"},
+-       {FIELD_OFFSET(D3DLIGHT9, Range),        "LT_RANGE"},
+-       {FIELD_OFFSET(D3DLIGHT9, Falloff),      "LT_FALLOFF"},
+-       {FIELD_OFFSET(D3DLIGHT9, Attenuation0), "LT_ATTENUATION0"},
+-       {FIELD_OFFSET(D3DLIGHT9, Attenuation1), "LT_ATTENUATION1"},
+-       {FIELD_OFFSET(D3DLIGHT9, Attenuation2), "LT_ATTENUATION2"},
+-       {FIELD_OFFSET(D3DLIGHT9, Theta),        "LT_THETA"},
+-       {FIELD_OFFSET(D3DLIGHT9, Phi),          "LT_PHI"}
++        {FIELD_OFFSET(D3DLIGHT9, Type),         "LC_TYPE"},
++        {FIELD_OFFSET(D3DLIGHT9, Diffuse),      "LT_DIFFUSE"},
++        {FIELD_OFFSET(D3DLIGHT9, Specular),     "LT_SPECULAR"},
++        {FIELD_OFFSET(D3DLIGHT9, Ambient),      "LT_AMBIENT"},
++        {FIELD_OFFSET(D3DLIGHT9, Position),     "LT_POSITION"},
++        {FIELD_OFFSET(D3DLIGHT9, Direction),    "LT_DIRECTION"},
++        {FIELD_OFFSET(D3DLIGHT9, Range),        "LT_RANGE"},
++        {FIELD_OFFSET(D3DLIGHT9, Falloff),      "LT_FALLOFF"},
++        {FIELD_OFFSET(D3DLIGHT9, Attenuation0), "LT_ATTENUATION0"},
++        {FIELD_OFFSET(D3DLIGHT9, Attenuation1), "LT_ATTENUATION1"},
++        {FIELD_OFFSET(D3DLIGHT9, Attenuation2), "LT_ATTENUATION2"},
++        {FIELD_OFFSET(D3DLIGHT9, Theta),        "LT_THETA"},
++        {FIELD_OFFSET(D3DLIGHT9, Phi),          "LT_PHI"}
+     };
+     switch (op)
+     {
+@@ -2551,7 +2565,7 @@ static void d3dx9_set_light_parameter(enum LIGHT_TYPE op, D3DLIGHT9 *light, void
+             D3DCOLORVALUE c = *(D3DCOLORVALUE *)value;
+ 
+             TRACE("%s (%f %f %f %f).\n", light_tbl[op].name, c.r, c.g, c.b, c.a);
+-            *(D3DCOLORVALUE *)((char *)light + light_tbl[op].offset) = c;
++            *(D3DCOLORVALUE *)((BYTE *)light + light_tbl[op].offset) = c;
+             break;
+         }
+         case LT_POSITION:
+@@ -2560,7 +2574,7 @@ static void d3dx9_set_light_parameter(enum LIGHT_TYPE op, D3DLIGHT9 *light, void
+             D3DVECTOR v = *(D3DVECTOR *)value;
+ 
+             TRACE("%s (%f %f %f).\n", light_tbl[op].name, v.x, v.y, v.z);
+-            *(D3DVECTOR *)((char *)light + light_tbl[op].offset) = v;
++            *(D3DVECTOR *)((BYTE *)light + light_tbl[op].offset) = v;
+             break;
+         }
+         case LT_RANGE:
+@@ -2573,7 +2587,7 @@ static void d3dx9_set_light_parameter(enum LIGHT_TYPE op, D3DLIGHT9 *light, void
+         {
+             float v = *(float *)value;
+             TRACE("%s %f.\n", light_tbl[op].name, v);
+-            *(float *)((char *)light + light_tbl[op].offset) = v;
++            *(float *)((BYTE *)light + light_tbl[op].offset) = v;
+             break;
+         }
+         default:
+@@ -2591,11 +2605,11 @@ static void d3dx9_set_material_parameter(enum MATERIAL_TYPE op, D3DMATERIAL9 *ma
+     }
+     material_tbl[] =
+     {
+-       {FIELD_OFFSET(D3DMATERIAL9, Diffuse),  "MT_DIFFUSE"},
+-       {FIELD_OFFSET(D3DMATERIAL9, Ambient),  "MT_AMBIENT"},
+-       {FIELD_OFFSET(D3DMATERIAL9, Specular), "MT_SPECULAR"},
+-       {FIELD_OFFSET(D3DMATERIAL9, Emissive), "MT_EMISSIVE"},
+-       {FIELD_OFFSET(D3DMATERIAL9, Power),    "MT_POWER"}
++        {FIELD_OFFSET(D3DMATERIAL9, Diffuse),  "MT_DIFFUSE"},
++        {FIELD_OFFSET(D3DMATERIAL9, Ambient),  "MT_AMBIENT"},
++        {FIELD_OFFSET(D3DMATERIAL9, Specular), "MT_SPECULAR"},
++        {FIELD_OFFSET(D3DMATERIAL9, Emissive), "MT_EMISSIVE"},
++        {FIELD_OFFSET(D3DMATERIAL9, Power),    "MT_POWER"}
+     };
+ 
+     switch (op)
+@@ -2616,7 +2630,7 @@ static void d3dx9_set_material_parameter(enum MATERIAL_TYPE op, D3DMATERIAL9 *ma
+             D3DCOLORVALUE c = *(D3DCOLORVALUE *)value;
+ 
+             TRACE("%s, value (%f %f %f %f).\n", material_tbl[op].name, c.r, c.g, c.b, c.a);
+-            *(D3DCOLORVALUE *)((char *)material + material_tbl[op].offset) = c;
++            *(D3DCOLORVALUE *)((BYTE *)material + material_tbl[op].offset) = c;
+             break;
+         }
+         default:
+diff --git a/dlls/d3dx9_36/preshader.c b/dlls/d3dx9_36/preshader.c
+index 8e8a81b..14482af 100644
+--- a/dlls/d3dx9_36/preshader.c
++++ b/dlls/d3dx9_36/preshader.c
+@@ -241,6 +241,57 @@ static void regstore_set_values(struct d3dx_regstore *rs, unsigned int table, vo
+                 1 << (reg_idx % PRES_VS_BITS_PER_WORD);
+ }
+ 
++static unsigned int regstore_is_val_set_reg(struct d3dx_regstore *rs, unsigned int table, unsigned int reg_idx)
++{
++    return rs->table_value_set[table][reg_idx / PRES_VS_BITS_PER_WORD] &
++            (1 << (reg_idx % PRES_VS_BITS_PER_WORD));
++}
++
++static void regstore_reset_table(struct d3dx_regstore *rs, unsigned int table)
++{
++    unsigned int sz;
++
++    sz = rs->table_sizes[table] * table_info[table].reg_value_cnt * table_info[table].value_size;
++
++    memset(rs->tables[table], 0, sz);
++    memset(rs->table_value_set[table], 0,
++            sizeof(*rs->table_value_set[table]) *
++            ((rs->table_sizes[table] + PRES_VS_BITS_PER_WORD - 1) / PRES_VS_BITS_PER_WORD));
++}
++
++static float regstore_get_float(struct d3dx_regstore *rs, unsigned int table, unsigned int offset)
++{
++    BYTE *p;
++
++    p = (BYTE *)rs->tables[table] + table_info[table].value_size * offset;
++    switch (table_info[table].type)
++    {
++        case PRES_VT_FLOAT : return *(float *)p;
++        case PRES_VT_DOUBLE: return *(double *)p;
++        case PRES_VT_INT   : return *(int *)p;
++        case PRES_VT_BOOL  : return *(BOOL *)p ? 1.0f : -0.0f;
++        default: return NAN;
++    }
++}
++
++static void regstore_set_float(struct d3dx_regstore *rs, unsigned int table, unsigned int offset, float v)
++{
++    BYTE *p;
++    unsigned int reg_idx;
++
++    p = (BYTE *)rs->tables[table] + table_info[table].value_size * offset;
++    switch (table_info[table].type)
++    {
++        case PRES_VT_FLOAT : *(float *)p = v; break;
++        case PRES_VT_DOUBLE: *(double *)p = v; break;
++        case PRES_VT_INT   : *(int *)p = roundf(v); break;
++        case PRES_VT_BOOL  : *(BOOL *)p = !!v; break;
++    }
++    reg_idx = offset / table_info[table].reg_value_cnt;
++    rs->table_value_set[table][reg_idx / PRES_VS_BITS_PER_WORD] |=
++                1 << (reg_idx % PRES_VS_BITS_PER_WORD);
++}
++
+ static void dump_shader_bytecode(void *data, unsigned int size)
+ {
+     unsigned int *words = (unsigned int *)data;
+@@ -682,3 +733,317 @@ void d3dx_free_param_eval(struct d3dx_param_eval *peval)
+     HeapFree(GetProcessHeap(), 0, peval);
+ }
+ 
++static HRESULT set_constants_param(struct d3dx_regstore *rs, struct d3dx_const_tab *const_tab,
++        D3DXHANDLE hc, struct d3dx_parameter *param)
++{
++    ID3DXConstantTable *ctab = const_tab->ctab;
++    D3DXCONSTANT_DESC desc;
++    unsigned int c_cnt, p_cnt, i, j, n, table, start_offset;
++    unsigned int nminor, nmajor, major_stride, inp_ind;
++    BOOL transpose;
++
++    ID3DXConstantTable_GetConstantDesc(ctab, hc, &desc, &c_cnt);
++    while (param->member_count && param->element_count)
++    {
++        if (param->element_count > 1)
++        {
++            FIXME("Unexpected param having both elements and members.\n");
++            return D3DERR_INVALIDCALL;
++        }
++        param = &param->members[0];
++    }
++
++    if (desc.Elements > 1)
++        c_cnt = desc.Elements;
++    else
++        c_cnt = desc.StructMembers;
++    p_cnt = max(param->element_count, param->member_count);
++    if (c_cnt != p_cnt)
++    {
++        FIXME("Number of elements or struct members differs between parameter and constant.\n");
++        return D3DERR_INVALIDCALL;
++    }
++    if (c_cnt)
++    {
++        HRESULT hr, ret;
++        D3DXHANDLE hcelem;
++
++        ret = D3D_OK;
++        for (i = 0; i < c_cnt; i++)
++        {
++            if (desc.StructMembers)
++                hcelem = ID3DXConstantTable_GetConstant(ctab, hc, i);
++            else
++                hcelem = ID3DXConstantTable_GetConstantElement(ctab, hc, i);
++            if (hcelem == NULL)
++            {
++                FIXME("Could not get constant.\n");
++                hr = D3DERR_INVALIDCALL;
++            }
++            else
++                hr = set_constants_param(rs, const_tab, hcelem, &param->members[i]);
++            if (FAILED(hr))
++                ret = hr;
++        }
++        return ret;
++    }
++
++    transpose = (desc.Class == D3DXPC_MATRIX_COLUMNS && param->class == D3DXPC_MATRIX_ROWS) ||
++            (param->class == D3DXPC_MATRIX_COLUMNS && desc.Class == D3DXPC_MATRIX_ROWS);
++    if (desc.Class == D3DXPC_MATRIX_COLUMNS)
++    {
++        nmajor = param->columns;
++        nminor = param->rows;
++    }
++    else
++    {
++        nmajor = param->rows;
++        nminor = param->columns;
++    }
++    TRACE("%s rows %u, par columns %u, par class %u, par flags %u, par bytes %u, c rows %u," \
++            "c columns %u, c class %u, c bytes %u, transpose %u.\n",
++            desc.Name, param->rows, param->columns, param->class, param->flags, param->bytes,
++            desc.Rows, desc.Columns, desc.Class, desc.Bytes, transpose);
++    table = const_tab->regset2table[desc.RegisterSet];
++    start_offset = desc.RegisterIndex * table_info[table].reg_value_cnt;
++    major_stride = max(nminor, table_info[table].reg_value_cnt);
++    n = min(nmajor * major_stride,
++            desc.RegisterCount * table_info[table].reg_value_cnt + major_stride - 1) / major_stride;
++    for (i = 0; i < n; i++)
++    {
++        for (j = 0; j < nminor; j++)
++        {
++            unsigned int out;
++            unsigned int *in;
++            unsigned int offset;
++
++            offset = start_offset + i * major_stride + j;
++            if (offset / table_info[table].reg_value_cnt >= rs->table_sizes[table])
++            {
++                if (table_info[table].reg_value_cnt != 1)
++                    FIXME("Output offset exceeds table size, name %s, component %u.\n", desc.Name, i);
++                break;
++            }
++            if (transpose)
++                inp_ind = i + j * nmajor;
++            else
++                inp_ind = i * nminor + j;
++            if (inp_ind * sizeof(unsigned int) >= param->bytes)
++            {
++                WARN("Parameter data is too short, name %s, component %u.\n", desc.Name, i);
++                break ;
++            }
++
++            in = (unsigned int *)param->data + inp_ind;
++            /* TODO: store data transfer / convert operation instead of performing an operation
++                from here, to move this to parsing stage */
++            switch (table_info[table].type)
++            {
++                case PRES_VT_FLOAT: set_number(&out, D3DXPT_FLOAT, in, param->type); break;
++                case PRES_VT_INT: set_number(&out, D3DXPT_INT, in, param->type); break;
++                case PRES_VT_BOOL: set_number(&out, D3DXPT_BOOL, in, param->type); break;
++                default:
++                    FIXME("Unexpected type %#x.\n", table_info[table].type);
++                    break;
++            }
++            regstore_set_values(rs, table, &out, offset, 1);
++        }
++    }
++
++    return D3D_OK;
++}
++
++static HRESULT set_constants(struct d3dx_regstore *rs, struct d3dx_const_tab *const_tab)
++{
++    unsigned int i;
++    HRESULT hr, ret;
++    D3DXHANDLE hc;
++
++    ret = D3D_OK;
++    for (i = 0; i < const_tab->ninputs; i++)
++    {
++        if (const_tab->inputs_param[i] == NULL || const_tab->inputs_param[i]->class == D3DXPC_OBJECT)
++            continue;
++        hc = ID3DXConstantTable_GetConstant(const_tab->ctab, NULL, i);
++        if (hc == NULL)
++        {
++            FIXME("Could not get constant.\n");
++            hr = D3DERR_INVALIDCALL;
++        }
++        else
++            hr = set_constants_param(rs, const_tab, hc, const_tab->inputs_param[i]);
++        if (FAILED(hr))
++            ret = hr;
++    }
++    return ret;
++}
++
++static float exec_get_arg(struct d3dx_regstore *rs, struct d3dx_pres_ins *ins,
++        struct d3dx_pres_operand *opr, unsigned int comp)
++{
++    if (!regstore_is_val_set_reg(rs, opr->table, (opr->offset + comp) / table_info[opr->table].reg_value_cnt))
++    {
++        /* no EOL in WARN to dump arg in the same line */
++        WARN("Using uninitialized input ");
++        dump_arg(rs, opr, comp);
++        TRACE(".\n");
++        dump_ins(rs, ins);
++    }
++    return regstore_get_float(rs, opr->table, opr->offset + comp);
++}
++
++static void exec_set_arg(struct d3dx_regstore *rs, struct d3dx_pres_operand *opr, unsigned int comp, float res)
++{
++    regstore_set_float(rs, opr->table, opr->offset + comp, res);
++}
++
++#define ARGS_ARRAY_SIZE 8
++static HRESULT execute_preshader(struct d3dx_preshader *pres)
++{
++    unsigned int i, j, k;
++    float args[ARGS_ARRAY_SIZE];
++    float res;
++
++    for (i = 0; i < pres->nins; i++)
++    {
++        struct d3dx_pres_ins *ins;
++        struct op_info *oi;
++
++        ins = &pres->ins[i];
++        oi = &pres_op_info[ins->op];
++        if (oi->func_all_comps)
++        {
++            if (ins->ninp_args * ins->ncomps > ARGS_ARRAY_SIZE)
++            {
++                FIXME("Too much arguments (%u) for one instruction.\n", ins->ninp_args * ins->ncomps);
++                return E_FAIL;
++            }
++            for (k = 0; k < ins->ninp_args; k++)
++                for (j = 0; j < ins->ncomps; j++)
++                    args[k * ins->ncomps + j] = exec_get_arg(&pres->regs, ins, &ins->inputs[k],
++                            ins->scalar_op && !k ? 0 : j);
++            res = oi->func(args, ins->ncomps);
++
++            /* only 'dot' instruction currently falls here */
++            exec_set_arg(&pres->regs, &ins->output, 0, res);
++        }
++        else
++        {
++            for (j = 0; j < ins->ncomps; j++)
++            {
++                for (k = 0; k < ins->ninp_args; k++)
++                    args[k] = exec_get_arg(&pres->regs, ins, &ins->inputs[k], ins->scalar_op && !k ? 0 : j);
++                res = oi->func(args, ins->ncomps);
++                exec_set_arg(&pres->regs, &ins->output, j, res);
++            }
++        }
++    }
++    return D3D_OK;
++}
++
++HRESULT d3dx_evaluate_parameter(struct d3dx_param_eval *peval, struct d3dx_parameter *param, void **param_value)
++{
++    HRESULT hr;
++    unsigned int i;
++    unsigned int elements, elements_param, elements_table;
++    float *oc;
++
++    TRACE("peval %p, param %p, param_value %p.\n", peval, param, param_value);
++
++    hr = set_constants(&peval->pres.regs, &peval->pres.inputs);
++    if (FAILED(hr))
++        return hr;
++
++    hr = execute_preshader(&peval->pres);
++    if (FAILED(hr))
++        return hr;
++
++    elements_table = table_info[PRES_REGTAB_OCONST].reg_value_cnt * peval->pres.regs.table_sizes[PRES_REGTAB_OCONST];
++    elements_param = param->bytes / sizeof(unsigned int);
++    elements = min(elements_table, elements_param);
++    *param_value = param->data;
++    oc = (float *)peval->pres.regs.tables[PRES_REGTAB_OCONST];
++    for (i = 0; i < elements; i++)
++        set_number((unsigned int *)(*param_value) + i, param->type, oc + i, D3DXPT_FLOAT);
++    return D3D_OK;
++}
++
++HRESULT d3dx_param_eval_set_shader_constants(struct IDirect3DDevice9 *device, struct d3dx_param_eval *peval)
++{
++    HRESULT hr, res;
++    struct d3dx_preshader *pres = &peval->pres;
++    struct d3dx_regstore *rs = &pres->regs;
++
++    TRACE("device %p, peval %p, param_type %u.\n", device, peval, peval->param_type);
++
++    if (peval->peval_type != PEVAL_TYPE_SHADER)
++    {
++        FIXME("Called for non-shader type preshader.\n");
++        return D3DERR_INVALIDCALL;
++    }
++
++    if (FAILED(hr = set_constants(rs, &pres->inputs)))
++        return hr;
++    if (FAILED(hr = execute_preshader(pres)))
++        return hr;
++    if (FAILED(hr = set_constants(rs, &peval->shader_inputs)))
++        return hr;
++
++    #define SET_TABLE(table, func_suff, type) \
++        { \
++            unsigned int is, n; \
++            \
++            is = 0; \
++            while (is < rs->table_sizes[table]) \
++            {\
++                n = 0; \
++                while (is < rs->table_sizes[table] && !regstore_is_val_set_reg(rs, table, is)) \
++                    is++; \
++                while (is + n < rs->table_sizes[table] && regstore_is_val_set_reg(rs, table, is + n)) \
++                    n++; \
++                if (!n) \
++                    continue ; \
++                TRACE("setting %u consts at %u.\n", n, is); \
++                hr = IDirect3DDevice9_##func_suff(device, is, \
++                        (const type *)rs->tables[table] + is * table_info[table].reg_value_cnt, n); \
++                if (FAILED(hr)) \
++                { \
++                    ERR(#func_suff " failed, hr %#x.\n", hr); \
++                    res = hr; \
++                } \
++                is += n; \
++            } \
++            regstore_reset_table(rs, table); \
++        }
++    res = D3D_OK;
++    if (peval->param_type == D3DXPT_VERTEXSHADER)
++    {
++        SET_TABLE(PRES_REGTAB_OCONST, SetVertexShaderConstantF, float);
++        SET_TABLE(PRES_REGTAB_OICONST, SetVertexShaderConstantI, int);
++        SET_TABLE(PRES_REGTAB_OBCONST, SetVertexShaderConstantB, BOOL);
++    }
++    else if (peval->param_type == D3DXPT_PIXELSHADER)
++    {
++        SET_TABLE(PRES_REGTAB_OCONST, SetPixelShaderConstantF, float);
++        SET_TABLE(PRES_REGTAB_OICONST, SetPixelShaderConstantI, int);
++        SET_TABLE(PRES_REGTAB_OBCONST, SetPixelShaderConstantB, BOOL);
++    }
++    else
++    {
++        FIXME("Unexpected parameter type %u.\n", peval->param_type);
++        return D3DERR_INVALIDCALL;
++    }
++    #undef SET_TABLE
++
++    return res;
++}
++
++HRESULT d3dx_param_eval_get_shader_parameters(struct d3dx_param_eval *peval, struct d3dx_parameter ***param,
++        unsigned int *nparam, D3DXCONSTANT_DESC **cdesc)
++{
++    *nparam = peval->shader_inputs.ninputs;
++    *param = peval->shader_inputs.inputs_param;
++    *cdesc = peval->shader_inputs.inputs;
++    return D3D_OK;
++}
++
+diff --git a/dlls/d3dx9_36/tests/effect.c b/dlls/d3dx9_36/tests/effect.c
+index f5f1279..6703b75 100644
+--- a/dlls/d3dx9_36/tests/effect.c
++++ b/dlls/d3dx9_36/tests/effect.c
+@@ -2917,7 +2917,7 @@ static void test_effect_states(IDirect3DDevice9 *device)
+     ok(!memcmp(mat.m, test_mat.m, sizeof(mat)), "World matrix does not match.\n");
+ 
+     hr = effect->lpVtbl->BeginPass(effect, 0);
+-    todo_wine ok(hr == D3D_OK, "Got result %x, expected 0 (D3D_OK).\n", hr);
++    ok(hr == D3D_OK, "Got result %x, expected 0 (D3D_OK).\n", hr);
+ 
+     hr = IDirect3DDevice9_GetTransform(device, D3DTS_WORLDMATRIX(1), &mat);
+     ok(hr == D3D_OK, "Got result %x, expected 0 (D3D_OK).\n", hr);
+@@ -2925,7 +2925,7 @@ static void test_effect_states(IDirect3DDevice9 *device)
+ 
+     hr = IDirect3DDevice9_GetTransform(device, D3DTS_VIEW, &mat);
+     ok(hr == D3D_OK, "Got result %x, expected 0 (D3D_OK).\n", hr);
+-    todo_wine ok(!memcmp(mat.m, test_mat_camera.m, sizeof(mat)), "View matrix does not match.\n");
++    ok(!memcmp(mat.m, test_mat_camera.m, sizeof(mat)), "View matrix does not match.\n");
+ 
+     hr = IDirect3DDevice9_GetRenderState(device, D3DRS_BLENDOP, &value);
+     ok(hr == D3D_OK, "Got result %x, expected 0 (D3D_OK).\n", hr);
+-- 
+2.5.0
+

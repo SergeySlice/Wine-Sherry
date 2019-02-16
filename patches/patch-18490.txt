@@ -1,0 +1,34 @@
+From e55ea968824f1ab6fc785eabc9a25ee046bfe9f0 Mon Sep 17 00:00:00 2001
+From: Adam Jakubek <ajakubek@gmail.com>
+Date: Sun, 10 Feb 2013 08:52:26 +0000
+Subject: wined3d: Use backup swapchain DC for devices created with desktop
+ window.
+
+---
+ dlls/wined3d/context.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index 4f8021c..31a2cf8 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -1365,10 +1365,14 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
+         }
+     }
+ 
+-    if (!(hdc = GetDC(swapchain->win_handle)))
+-    {
+-        WARN("Failed to retireve device context, trying swapchain backup.\n");
++    hdc = NULL;
+ 
++    if (swapchain->win_handle == GetDesktopWindow())
++        TRACE("Attempted to retrieve device context of desktop window, trying swapchain backup.\n");
++    else if (!(hdc = GetDC(swapchain->win_handle)))
++        WARN("Failed to retrieve device context, trying swapchain backup.\n");
++    if (!hdc)
++    {
+         if (!(hdc = swapchain_get_backup_dc(swapchain)))
+         {
+             ERR("Failed to retrieve a device context.\n");
+-- 
+1.8.4

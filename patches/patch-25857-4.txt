@@ -1,0 +1,148 @@
+From 4323e62568187dd291b2df04fe3342e2c7e4e0cc Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Wed, 9 Mar 2016 15:59:16 +0300
+Subject: [PATCH 4/9] d3dx9: add basic opcodes to preshader.
+
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/d3dx9_36/preshader.c    | 60 ++++++++++++++++++++++++++++++++++++++++++++
+ dlls/d3dx9_36/tests/effect.c | 32 +++++++++++------------
+ 2 files changed, 76 insertions(+), 16 deletions(-)
+
+diff --git a/dlls/d3dx9_36/preshader.c b/dlls/d3dx9_36/preshader.c
+index 14482af..31a44ec 100644
+--- a/dlls/d3dx9_36/preshader.c
++++ b/dlls/d3dx9_36/preshader.c
+@@ -38,12 +38,58 @@ enum PRES_OPS
+ {
+     PRESHADER_OP_NOP,
+     PRESHADER_OP_MOV,
++    PRESHADER_OP_ADD,
++    PRESHADER_OP_MUL,
++    PRESHADER_OP_DOT,
++    PRESHADER_OP_NEG,
++    PRESHADER_OP_RCP,
++    PRESHADER_OP_LT,
++    PRESHADER_OP_FRC,
++    PRESHADER_OP_MIN,
++    PRESHADER_OP_MAX,
++    PRESHADER_OP_GE,
++    PRESHADER_OP_CMP,
++    PRESHADER_OP_SIN,
++    PRESHADER_OP_COS,
++    PRESHADER_OP_RSQ,
+     PRESHADER_OP_MAX_ENUM
+ };
+ 
+ typedef float (*pres_op_func)(float *args, int ncomp);
+ 
+ static float pres_mov(float *args, int ncomp) {return args[0];}
++static float pres_add(float *args, int ncomp) {return args[0] + args[1];}
++static float pres_mul(float *args, int ncomp) {return args[0] * args[1];}
++static float pres_dot(float *args, int ncomp)
++{
++    int i;
++    double sum;
++
++    sum = 0.0f;
++    for (i = 0; i < ncomp; i++)
++        sum += args[i] * args[i + ncomp];
++    return sum;
++}
++static float pres_neg(float *args, int ncomp) {return -args[0];}
++static float pres_rcp(float *args, int ncomp) {return 1.0f / args[0];}
++static float pres_lt(float *args, int ncomp)  {return args[0] < args[1] ? 1.0f : 0.0f;}
++static float pres_ge(float *args, int ncomp)  {return args[0] >= args[1] ? 1.0f : 0.0f;}
++static float pres_frc(float *args, int ncomp) {return args[0] - floorf(args[0]);}
++static float pres_min(float *args, int ncomp) {return fminf(args[0], args[1]);}
++static float pres_max(float *args, int ncomp) {return fmaxf(args[0], args[1]);}
++static float pres_cmp(float *args, int ncomp) {return args[0] < 0.0f ? args[2] : args[1];}
++static float pres_sin(float *args, int ncomp) {return sin(args[0]);}
++static float pres_cos(float *args, int ncomp) {return cos(args[0]);}
++static float pres_rsq(float *args, int ncomp)
++{
++float v;
++
++    v = fabsf(args[0]);
++    if (v == 0.0f)
++        return INFINITY;
++    else
++        return 1.0f / sqrt(v);
++}
+ 
+ #define PRES_OPCODE_MASK 0x7ff00000
+ #define PRES_OPCODE_SHIFT 20
+@@ -69,6 +115,20 @@ static struct op_info pres_op_info[] =
+ {
+     {0x000, "nop", 0, 0, NULL    }, /* PRESHADER_OP_NOP */
+     {0x100, "mov", 1, 0, pres_mov}, /* PRESHADER_OP_MOV */
++    {0x204, "add", 2, 0, pres_add}, /* PRESHADER_OP_ADD */
++    {0x205, "mul", 2, 0, pres_mul}, /* PRESHADER_OP_MUL */
++    {0x500, "dot", 2, 1, pres_dot}, /* PRESHADER_OP_DOT */
++    {0x101, "neg", 1, 0, pres_neg}, /* PRESHADER_OP_NEG */
++    {0x103, "rcp", 1, 0, pres_rcp}, /* PRESHADER_OP_RCP */
++    {0x202, "lt",  2, 0, pres_lt }, /* PRESHADER_OP_LT  */
++    {0x104, "frc", 1, 0, pres_frc}, /* PRESHADER_OP_FRC */
++    {0x200, "min", 2, 0, pres_min}, /* PRESHADER_OP_MIN */
++    {0x201, "max", 2, 0, pres_max}, /* PRESHADER_OP_MAX */
++    {0x203, "ge",  2, 0, pres_ge }, /* PRESHADER_OP_GE  */
++    {0x300, "cmp", 3, 0, pres_cmp}, /* PRESHADER_OP_CMP */
++    {0x108, "sin", 1, 0, pres_sin}, /* PRESHADER_OP_SIN */
++    {0x109, "cos", 1, 0, pres_cos}, /* PRESHADER_OP_COS */
++    {0x107, "rsq", 1, 0, pres_rsq}, /* PRESHADER_OP_RSQ */
+ };
+ 
+ enum PRES_VALUE_TYPE
+diff --git a/dlls/d3dx9_36/tests/effect.c b/dlls/d3dx9_36/tests/effect.c
+index 6703b75..079383a 100644
+--- a/dlls/d3dx9_36/tests/effect.c
++++ b/dlls/d3dx9_36/tests/effect.c
+@@ -3608,21 +3608,21 @@ static const struct
+ }
+ test_effect_preshader_op_results[] =
+ {
+-    {"1 / op", {1, 1, 1, 1}, {0x7f800000, 0xff800000, 0xbee8ba2e, 0x00200000}},
+-    {"rsq",    {1, 1, 3, 3}, {0x7f800000, 0x7f800000, 0x3f2c985d, 0x1f800000}},
+-    {"mul",    {1, 1, 1, 1}, {0x00000000, 0x80000000, 0x40d33334, 0x7f800000}},
+-    {"add",    {0, 1, 1, 1}, {0x3f800000, 0x40000000, 0xc0a66666, 0x7f7fffff}},
+-    {"lt",     {0, 0, 1, 0}, {0x3f800000, 0x3f800000, 0x00000000, 0x00000000}},
+-    {"ge",     {1, 1, 0, 1}, {0x00000000, 0x00000000, 0x3f800000, 0x3f800000}},
+-    {"neg",    {1, 1, 1, 1}, {0x80000000, 0x00000000, 0x400ccccd, 0xff7fffff}},
+-    {"rcp",    {1, 1, 1, 1}, {0x7f800000, 0xff800000, 0xbee8ba2e, 0x00200000}},
+-    {"frac",   {0, 0, 1, 0}, {0x00000000, 0x00000000, 0x3f4ccccc, 0x00000000}},
+-    {"min",    {0, 1, 1, 1}, {0x00000000, 0x80000000, 0xc0400000, 0x40800000}},
+-    {"max",    {1, 1, 1, 1}, {0x3f800000, 0x40000000, 0xc00ccccd, 0x7f7fffff}},
+-    {"sin",    {0, 1, 1, 3}, {0x00000000, 0x80000000, 0xbf4ef99e, 0xbf0599b3}},
+-    {"cos",    {1, 1, 1, 3}, {0x3f800000, 0x3f800000, 0xbf16a803, 0x3f5a5f96}},
+-    {"den mul",{1, 1, 1, 1}, {0x7f800000, 0xff800000, 0xbb94f209, 0x000051ec}},
+-    {"dot",    {0, 1, 1, 0}, {0x00000000, 0x7f800000, 0x41f00000, 0x00000000}}
++    {"1 / op", {0, 0, 0, 0}, {0x7f800000, 0xff800000, 0xbee8ba2e, 0x00200000}},
++    {"rsq",    {0, 0, 2, 2}, {0x7f800000, 0x7f800000, 0x3f2c985d, 0x1f800000}},
++    {"mul",    {0, 0, 0, 0}, {0x00000000, 0x80000000, 0x40d33334, 0x7f800000}},
++    {"add",    {0, 0, 0, 0}, {0x3f800000, 0x40000000, 0xc0a66666, 0x7f7fffff}},
++    {"lt",     {0, 0, 0, 0}, {0x3f800000, 0x3f800000, 0x00000000, 0x00000000}},
++    {"ge",     {0, 0, 0, 0}, {0x00000000, 0x00000000, 0x3f800000, 0x3f800000}},
++    {"neg",    {0, 0, 0, 0}, {0x80000000, 0x00000000, 0x400ccccd, 0xff7fffff}},
++    {"rcp",    {0, 0, 0, 0}, {0x7f800000, 0xff800000, 0xbee8ba2e, 0x00200000}},
++    {"frac",   {0, 0, 0, 0}, {0x00000000, 0x00000000, 0x3f4ccccc, 0x00000000}},
++    {"min",    {0, 0, 0, 0}, {0x00000000, 0x80000000, 0xc0400000, 0x40800000}},
++    {"max",    {0, 0, 0, 0}, {0x3f800000, 0x40000000, 0xc00ccccd, 0x7f7fffff}},
++    {"sin",    {0, 0, 0, 2}, {0x00000000, 0x80000000, 0xbf4ef99e, 0xbf0599b3}},
++    {"cos",    {0, 0, 0, 2}, {0x3f800000, 0x3f800000, 0xbf16a803, 0x3f5a5f96}},
++    {"den mul",{0, 0, 0, 0}, {0x7f800000, 0xff800000, 0xbb94f209, 0x000051ec}},
++    {"dot",    {0, 0, 0, 0}, {0x00000000, 0x7f800000, 0x41f00000, 0x00000000}}
+ };
+ 
+ #define TEST_EFFECT_PRES_NFLOATV ARRAY_SIZE(test_effect_preshader_fconstsv)
+@@ -3683,7 +3683,7 @@ static void test_effect_preshader(IDirect3DDevice9 *device)
+     ok(hr == D3D_OK, "SetFloatArray failed, hr %#x.\n", hr);
+ 
+     hr = effect->lpVtbl->BeginPass(effect, 0);
+-    todo_wine ok(hr == D3D_OK, "Got result %#x.\n", hr);
++    ok(hr == D3D_OK, "Got result %#x.\n", hr);
+ 
+     hr = IDirect3DDevice9_GetVertexShaderConstantF(device, 0, (float *)fdata, TEST_EFFECT_PRES_NFLOATV);
+     ok(hr == D3D_OK, "Got result %#x.\n", hr);
+-- 
+2.5.0
+
