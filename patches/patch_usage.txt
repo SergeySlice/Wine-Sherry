@@ -1,25 +1,30 @@
+commit 6d8c9eee4a94e52e0a97210787708cd22b865f17
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Sun Feb 17 09:21:03 2019 +0300
+
+    patch usage
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
 diff --git a/dlls/wined3d/utils.c b/dlls/wined3d/utils.c
-index 1686e30..a46b8e4 100644
+index 4d9e01a..ca72f71 100644
 --- a/dlls/wined3d/utils.c
 +++ b/dlls/wined3d/utils.c
-@@ -2533,8 +2581,9 @@ const char *debug_d3dusage(DWORD usage)
-     WINED3DUSAGE_TO_STR(WINED3DUSAGE_DMAP);
+@@ -4536,7 +4536,7 @@ const char *debug_d3dusage(DWORD usage)
      WINED3DUSAGE_TO_STR(WINED3DUSAGE_STATICDECL);
      WINED3DUSAGE_TO_STR(WINED3DUSAGE_OVERLAY);
-+    WINED3DUSAGE_TO_STR(WINED3DUSAGE_TEXTURE);
  #undef WINED3DUSAGE_TO_STR
--    if (usage) FIXME("Unrecognized usage flag(s) %#x\n", usage);
-+    if (usage & ~WINED3DUSAGE_QUERY_MASK) FIXME("Unrecognized usage flag(s) %#x\n", usage);
+-    if (usage)
++    if (usage  & ~WINED3DUSAGE_QUERY_MASK)
+         FIXME("Unrecognized usage flag(s) %#x.\n", usage);
  
-     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
- }
-@@ -2553,7 +2602,7 @@ const char *debug_d3dusagequery(DWORD usagequery)
+     return wine_dbg_sprintf("%s", buffer.str);
+@@ -4557,7 +4557,7 @@ const char *debug_d3dusagequery(DWORD usage)
      WINED3DUSAGEQUERY_TO_STR(WINED3DUSAGE_QUERY_VERTEXTEXTURE);
      WINED3DUSAGEQUERY_TO_STR(WINED3DUSAGE_QUERY_WRAPANDMIP);
  #undef WINED3DUSAGEQUERY_TO_STR
--    if (usagequery) FIXME("Unrecognized usage query flag(s) %#x\n", usagequery);
-+    if (usagequery & WINED3DUSAGE_QUERY_MASK) FIXME("Unrecognized usage query flag(s) %#x\n", usagequery);
+-    if (usage)
++    if (usage & WINED3DUSAGE_QUERY_MASK)
+         FIXME("Unrecognized usage query flag(s) %#x.\n", usage);
  
-     return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
- }
- 
+     return wine_dbg_sprintf("%s", buffer.str);

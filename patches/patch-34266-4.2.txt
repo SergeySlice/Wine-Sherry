@@ -1,0 +1,70 @@
+commit 540b21a5363fd50d3dacf9ef9bfeaa911bc076fc
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Sun Feb 17 09:09:18 2019 +0300
+
+    patch 34266
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index 7f2d34f..315182d 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -4541,6 +4541,8 @@ static void shader_glsl_scalar_op(const struct wined3d_shader_instruction *ins)
+     const char *prefix, *suffix;
+     unsigned int dst_size;
+     DWORD dst_write_mask;
++    int use_zero_mul_hack = 0;
++    const char *zero_mul_hack_value;
+ 
+     dst_write_mask = shader_glsl_append_dst(buffer, ins);
+     dst_size = shader_glsl_get_write_mask_size(dst_write_mask);
+@@ -4562,16 +4564,22 @@ static void shader_glsl_scalar_op(const struct wined3d_shader_instruction *ins)
+         case WINED3DSIH_LOGP:
+             prefix = "log2(abs(";
+             suffix = "))";
++            use_zero_mul_hack = 1;
++            zero_mul_hack_value = "-1.0e10";
+             break;
+ 
+         case WINED3DSIH_RCP:
+             prefix = "1.0 / ";
+             suffix = "";
++            use_zero_mul_hack = 1;
++            zero_mul_hack_value = "1.0e10";
+             break;
+ 
+         case WINED3DSIH_RSQ:
+             prefix = "inversesqrt(abs(";
+             suffix = "))";
++            use_zero_mul_hack = 1;
++            zero_mul_hack_value = "1.0e10";
+             break;
+ 
+         default:
+@@ -4582,7 +4590,24 @@ static void shader_glsl_scalar_op(const struct wined3d_shader_instruction *ins)
+     }
+ 
+     if (dst_size > 1 && shader_version < WINED3D_SHADER_VERSION(4, 0))
+-        shader_addline(buffer, "vec%u(%s%s%s));\n", dst_size, prefix, src0_param.param_str, suffix);
++    {
++        if (use_zero_mul_hack)
++        {
++             shader_addline(buffer, "mix(vec%u(%s%s%s), vec%u(%s), equal(vec%u(%s), vec%u(0.0))));\n",
++                             dst_size, prefix, src0_param.param_str, suffix,
++                             dst_size, zero_mul_hack_value,
++                             dst_size, src0_param.param_str, dst_size);
++        }
++        else
++        {
++            shader_addline(buffer, "%s%s%s%s%s%s%s);\n",
++                           use_zero_mul_hack ? src0_param.param_str : "",
++                           use_zero_mul_hack ? " == 0.0 ? " : "",
++                           use_zero_mul_hack ? zero_mul_hack_value : "",
++                           use_zero_mul_hack ? " : " : "",
++                           prefix, src0_param.param_str, suffix);
++        }
++    }
+     else
+         shader_addline(buffer, "%s%s%s);\n", prefix, src0_param.param_str, suffix);
+ }
