@@ -21,7 +21,7 @@ index d28cd9f..0e50473 100644
  
 -    memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));
 +    if (lpDevice) {
-+        strcpyW(lpDisplayDevice->DeviceName, lpDevice)
++        strcpyW(lpDisplayDevice->DeviceName, lpDevice);
 +    }
 +    else {
 +        memcpy(lpDisplayDevice->DeviceName, primary_device_name, sizeof(primary_device_name));

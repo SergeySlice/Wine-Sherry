@@ -1,0 +1,29 @@
+commit 162b0d6bf5fcba15442d49fb3855e464d6374a18
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Sat Jan 16 11:02:46 2016 +0300
+
+    partial patch for bug 32007: avoid null-poiter on subresources
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/view.c b/dlls/wined3d/view.c
+index e621356..7c009e2 100644
+--- a/dlls/wined3d/view.c
++++ b/dlls/wined3d/view.c
+@@ -119,6 +119,15 @@ static void wined3d_rendertarget_view_init(struct wined3d_rendertarget_view *vie
+         sub_resource = wined3d_texture_get_sub_resource(texture, view->sub_resource_idx);
+ 
+         view->buffer_offset = 0;
++        //bug 32007
++        if (!sub_resource) {
++            ERR("no subresource idx=%d\n", view->sub_resource_idx);
++            view->width = desc->u.buffer.count;
++            view->height = texture->level_count;
++            view->depth = 1;
++            return;
++        }
++
+         view->width = sub_resource->width;
+         view->height = sub_resource->height;
+         view->depth = desc->u.texture.layer_count;
+ 

@@ -1,0 +1,51 @@
+From 69e1c4b4c506e934eba208b8d0953d75b1c859c3 Mon Sep 17 00:00:00 2001
+From: "Erich E. Hoover" <erich.e.hoover@wine-staging.com>
+Date: Mon, 22 Jun 2015 18:19:08 -0600
+Subject: wined3d: Allow either src/dst (but not both) to be in system memory
+ for FBO blits.
+
+---
+ dlls/wined3d/surface.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index c6d5a5a..fa518b0 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -983,7 +983,7 @@ static BOOL fbo_blit_supported(const struct wined3d_gl_info *gl_info, enum wined
+         return FALSE;
+ 
+     /* Source and/or destination need to be on the GL side */
+-    if (src_pool == WINED3D_POOL_SYSTEM_MEM || dst_pool == WINED3D_POOL_SYSTEM_MEM)
++    if (src_pool == WINED3D_POOL_SYSTEM_MEM && dst_pool == WINED3D_POOL_SYSTEM_MEM)
+         return FALSE;
+ 
+     switch (blit_op)
+-- 
+1.9.1
+
+
+From b94f1ef8c3d9e0262964c586d3f8d9d2787d35e3 Mon Sep 17 00:00:00 2001
+From: "Erich E. Hoover" <erich.e.hoover@wine-staging.com>
+Date: Mon, 22 Jun 2015 17:27:00 -0600
+Subject: wined3d: Report blitter support for 8-bit palettized surfaces.
+
+---
+ dlls/wined3d/surface.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/dlls/wined3d/surface.c b/dlls/wined3d/surface.c
+index fa518b0..7594dad 100644
+--- a/dlls/wined3d/surface.c
++++ b/dlls/wined3d/surface.c
+@@ -995,6 +995,8 @@ static BOOL fbo_blit_supported(const struct wined3d_gl_info *gl_info, enum wined
+             if (!((dst_format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_FBO_ATTACHABLE)
+                     || (dst_usage & WINED3DUSAGE_RENDERTARGET)))
+                 return FALSE;
++            if (src_format->id == WINED3DFMT_P8_UINT && gl_info->supported[ARB_FRAGMENT_PROGRAM])
++                return TRUE;
+             break;
+ 
+         case WINED3D_BLIT_OP_DEPTH_BLIT:
+-- 
+1.9.1

@@ -1,31 +1,54 @@
---- dlls/wined3d/directx.c	2015-04-21 07:30:42.000000000 +0300
-+++ ../wine-patched/dlls/wined3d/directx.c	2015-04-21 20:27:53.000000000 +0300
-@@ -1905,6 +1905,28 @@ cards_nvidia_binary[] =
-  * eg HD 4800 is returned for multiple cards, even for RV790 based ones. */
+
+commit 1274cdb29280aa471a9e30460fabd703aa60af70
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Sun Feb 17 09:28:46 2019 +0300
+
+    patch amd families
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/adapter_gl.c b/dlls/wined3d/adapter_gl.c
+index 61d1f48..d02d824 100644
+--- a/dlls/wined3d/adapter_gl.c
++++ b/dlls/wined3d/adapter_gl.c
+@@ -1471,6 +1471,39 @@ cards_nvidia_binary[] =
+  * e.g. HD 4800 is returned for multiple cards, even for RV790 based ones. */
  cards_amd_binary[] =
  {
-+    /* by family name */
-+    {"Hawaii",                      CARD_AMD_RADEON_R9    },
++    /* Polaris 10/11 */
++    {"Polaris10",                   CARD_AMD_RADEON_RX_480},
++    {"Polaris11",                   CARD_AMD_RADEON_RX_460},
++    /* Volcanic Islands */
++    {"Fiji",                        CARD_AMD_RADEON_R9_FURY},
++    {"Tonga",                       CARD_AMD_RADEON_R9_285},
++    /* Sea Islands */
++    {"Hawaii",                      CARD_AMD_RADEON_R9_290},
 +    {"Kaveri",                      CARD_AMD_RADEON_R7    },
 +    {"Kabini",                      CARD_AMD_RADEON_R3    },
-+    {"Bonair",                      CARD_AMD_RADEON_HD8770},
++    {"Bonaire",                     CARD_AMD_RADEON_HD8770},
 +    /* Southern Islands */
 +    {"Oland",                       CARD_AMD_RADEON_HD8670},
-+    {"Hainan",                      CARD_AMD_RADEON_HD8600M},
++    {"Oainan",                      CARD_AMD_RADEON_HD8600M},
 +    {"Tahiti",                      CARD_AMD_RADEON_HD7900},
 +    {"Pitcairn",                    CARD_AMD_RADEON_HD7800},
 +    {"Verde",                       CARD_AMD_RADEON_HD7700},
 +    /* Northern Islands */
+
++    {"Aruba",                       CARD_AMD_RADEON_HD7660D},
 +    {"Cayman",                      CARD_AMD_RADEON_HD6900},
 +    {"Barts",                       CARD_AMD_RADEON_HD6800},
 +    {"Turks",                       CARD_AMD_RADEON_HD6600},
++    {"Sumo2",                       CARD_AMD_RADEON_HD6410D},   /* SUMO2 first, because we do a strstr(). */
++    {"Sumo",                        CARD_AMD_RADEON_HD6550D},
 +    {"Caicos",                      CARD_AMD_RADEON_HD6400},
++    {"Palm",                        CARD_AMD_RADEON_HD6300},
 +    /* Evergreen */
 +    {"Hemlock",                     CARD_AMD_RADEON_HD5900},
 +    {"Cypress",                     CARD_AMD_RADEON_HD5800},
 +    {"Juniper",                     CARD_AMD_RADEON_HD5700},
 +    {"Redwood",                     CARD_AMD_RADEON_HD5600},
 +    {"Cedar",                       CARD_AMD_RADEON_HD5400},
-     /* Southern Islands */
-     {"HD 7900",                     CARD_AMD_RADEON_HD7900},
-     {"HD 7800",                     CARD_AMD_RADEON_HD7800},
++    /* Polaris */
+     {"RX 480",                      CARD_AMD_RADEON_RX_480},
+     {"RX 460",                      CARD_AMD_RADEON_RX_460},
+     {"R9 Fury Series",              CARD_AMD_RADEON_R9_FURY},

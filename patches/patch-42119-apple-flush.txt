@@ -1,0 +1,128 @@
+commit 9e4de35df92bf2617aad4b4c3724a1fa33e7bea3
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Tue Feb 19 05:44:33 2019 +0300
+
+    use APPLE_FLUSH_BUFFER_RANGE to replace missing ARB_MAP_BUFFER_RANGE
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/adapter_gl.c b/dlls/wined3d/adapter_gl.c
+index d02d824..5c30b81 100644
+--- a/dlls/wined3d/adapter_gl.c
++++ b/dlls/wined3d/adapter_gl.c
+@@ -3543,8 +3543,12 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter,
+     if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
+     {
+         /* GL_ARB_map_buffer_range and GL_APPLE_flush_buffer_range provide the same
+-         * functionality. Prefer the ARB extension */
++        * functionality. Prefer the ARB extension */
+         gl_info->supported[APPLE_FLUSH_BUFFER_RANGE] = FALSE;
++    } else if (gl_info->supported[APPLE_FLUSH_BUFFER_RANGE])
++    {
++        /* SI I want to reverse logic */
++        gl_info->supported[ARB_MAP_BUFFER_RANGE] = TRUE;
+     }
+     if (gl_info->supported[ARB_TEXTURE_CUBE_MAP])
+     {
+diff --git a/dlls/wined3d/buffer.c b/dlls/wined3d/buffer.c
+index 1069d05..1c51b8d 100644
+--- a/dlls/wined3d/buffer.c
++++ b/dlls/wined3d/buffer.c
+@@ -1079,21 +1079,23 @@ static HRESULT wined3d_buffer_gl_map(struct wined3d_buffer_gl *buffer_gl,
+                 if (buffer_gl->b.flags & WINED3D_BUFFER_DISCARD)
+                     flags &= ~WINED3D_MAP_DISCARD;
+ 
+-                if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
++              if (buffer_gl->b.flags & WINED3D_BUFFER_APPLESYNC)
+                 {
+-                    GLbitfield mapflags = wined3d_resource_gl_map_flags(flags);
+-                    buffer_gl->b.map_ptr = GL_EXTCALL(glMapBufferRange(buffer_gl->buffer_type_hint,
+-                            0, buffer_gl->b.resource.size, mapflags));
+-                    checkGLcall("glMapBufferRange");
+-                }
+-                else
+-                {
+-                    if (buffer_gl->b.flags & WINED3D_BUFFER_APPLESYNC)
+-                        wined3d_buffer_gl_sync_apple(buffer_gl, flags, gl_info);
++                  
++                    wined3d_buffer_gl_sync_apple(buffer_gl, flags, gl_info);
+                     buffer_gl->b.map_ptr = GL_EXTCALL(glMapBuffer(buffer_gl->buffer_type_hint,
+                             GL_READ_WRITE));
+                     checkGLcall("glMapBuffer");
+                 }
++              else if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
++              {
++                GLbitfield mapflags = wined3d_resource_gl_map_flags(flags);
++                buffer_gl->b.map_ptr = GL_EXTCALL(glMapBufferRange(buffer_gl->buffer_type_hint,
++                                                                   0, buffer_gl->b.resource.size, mapflags));
++                checkGLcall("glMapBufferRange");
++              }
++              
++
+ 
+                 if (((DWORD_PTR)buffer_gl->b.map_ptr) & (RESOURCE_ALIGNMENT - 1))
+                 {
+@@ -1172,24 +1174,24 @@ static void wined3d_buffer_gl_unmap(struct wined3d_buffer_gl *buffer_gl)
+ 
+         wined3d_buffer_gl_bind(buffer_gl, context);
+ 
+-        if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
++        if (buffer_gl->b.flags & WINED3D_BUFFER_APPLESYNC)
+         {
+             for (i = 0; i < buffer_gl->b.modified_areas; ++i)
+             {
+-                GL_EXTCALL(glFlushMappedBufferRange(buffer_gl->buffer_type_hint,
++                GL_EXTCALL(glFlushMappedBufferRangeAPPLE(buffer_gl->buffer_type_hint,
+                         buffer_gl->b.maps[i].offset, buffer_gl->b.maps[i].size));
+-                checkGLcall("glFlushMappedBufferRange");
++                checkGLcall("glFlushMappedBufferRangeAPPLE");
+             }
+-        }
+-        else if (buffer_gl->b.flags & WINED3D_BUFFER_APPLESYNC)
+-        {
++        } else
++          if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
++          {
+             for (i = 0; i < buffer_gl->b.modified_areas; ++i)
+             {
+-                GL_EXTCALL(glFlushMappedBufferRangeAPPLE(buffer_gl->buffer_type_hint,
+-                        buffer_gl->b.maps[i].offset, buffer_gl->b.maps[i].size));
+-                checkGLcall("glFlushMappedBufferRangeAPPLE");
++              GL_EXTCALL(glFlushMappedBufferRange(buffer_gl->buffer_type_hint,
++                                                  buffer_gl->b.maps[i].offset, buffer_gl->b.maps[i].size));
++              checkGLcall("glFlushMappedBufferRange");
+             }
+-        }
++          }
+ 
+         GL_EXTCALL(glUnmapBuffer(buffer_gl->buffer_type_hint));
+         context_release(context);
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index 639f9d6..d772fe3 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -2598,16 +2598,16 @@ void *context_map_bo_address(struct wined3d_context *context,
+     gl_info = context->gl_info;
+     context_bind_bo(context, binding, data->buffer_object);
+ 
+-    if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
+-    {
+-        GLbitfield map_flags = wined3d_resource_gl_map_flags(flags) & ~GL_MAP_FLUSH_EXPLICIT_BIT;
+-        memory = GL_EXTCALL(glMapBufferRange(binding, (INT_PTR)data->addr, size, map_flags));
+-    }
+-    else
+-    {
++     if (gl_info->supported[APPLE_FLUSH_BUFFER_RANGE])     {
+         memory = GL_EXTCALL(glMapBuffer(binding, wined3d_resource_gl_legacy_map_flags(flags)));
+         memory += (INT_PTR)data->addr;
+-    }
++     } else
++      if (gl_info->supported[ARB_MAP_BUFFER_RANGE])
++      {
++        GLbitfield map_flags = wined3d_resource_gl_map_flags(flags) & ~GL_MAP_FLUSH_EXPLICIT_BIT;
++        memory = GL_EXTCALL(glMapBufferRange(binding, (INT_PTR)data->addr, size, map_flags));
++      }
++
+ 
+     context_bind_bo(context, binding, 0);
+     checkGLcall("Map buffer object");

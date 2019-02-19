@@ -1,0 +1,131 @@
+commit ac69e6191e7a31c8a41be2b3016f5affa3c8bae1
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Sun Feb 17 09:45:19 2019 +0300
+
+    print trying to blit once
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/wined3d/swapchain.c b/dlls/wined3d/swapchain.c
+index f7fc05f..af33460 100644
+--- a/dlls/wined3d/swapchain.c
++++ b/dlls/wined3d/swapchain.c
+@@ -568,8 +568,10 @@ static void swapchain_gdi_frontbuffer_updated(struct wined3d_swapchain *swapchai
+     if (swapchain->palette)
+         wined3d_palette_apply_to_dc(swapchain->palette, front->dc);
+ 
+-    if (swapchain->front_buffer->resource.map_count)
+-        ERR("Trying to blit a mapped surface.\n");
++    if (swapchain->front_buffer->resource.map_count) {
++        static int once = 0;
++        if (!once++) ERR("Trying to blit a mapped surface.\n");
++    }
+ 
+     TRACE("Copying surface %p to screen.\n", front);
+ 
+diff --git a/tools/makedep.c b/tools/makedep.c
+index 532ef52..1ab584a 100644
+--- a/tools/makedep.c
++++ b/tools/makedep.c
+@@ -1691,7 +1691,7 @@ static const char *get_make_variable( const struct makefile *make, const char *n
+ static char *get_expanded_make_variable( const struct makefile *make, const char *name )
+ {
+     const char *var;
+-    char *p, *end, *expand, *tmp;
++    char *p, *end, *expand, *tmp = NULL;
+ 
+     var = get_make_variable( make, name );
+     if (!var) return NULL;
+@@ -2547,7 +2547,7 @@ static void output_source_rc( struct makefile *make, struct incl_file *source, c
+     strarray_add( &make->object_files, strmake( "%s.res", obj ));
+     if (crosstarget) strarray_add( &make->crossobj_files, strmake( "%s.res", obj ));
+     output( "%s.res: %s\n", obj_dir_path( make, obj ), source->filename );
+-    output( "\t%s -o $@", tools_path( make, "wrc" ) );
++    output( "\t@%s -o $@", tools_path( make, "wrc" ) );
+     if (make->is_win16) output_filename( "-m16" );
+     else output_filenames( target_flags );
+     output_filename( "--nostdinc" );
+@@ -2560,6 +2560,7 @@ static void output_source_rc( struct makefile *make, struct incl_file *source, c
+         output_filename( strmake( "--po-dir=%s", po_dir ));
+         output_filename( source->filename );
+         output( "\n" );
++      output( "\t@echo [WRC] $@\n" );
+         output( "%s.res:", obj_dir_path( make, obj ));
+         for (i = 0; i < linguas.count; i++)
+             output_filename( strmake( "%s/%s.mo", po_dir, linguas.str[i] ));
+@@ -2569,6 +2570,7 @@ static void output_source_rc( struct makefile *make, struct incl_file *source, c
+     {
+         output_filename( source->filename );
+         output( "\n" );
++      output( "\t@echo [WRC] $@\n" );
+     }
+     if (source->file->flags & FLAG_RC_PO && !(source->file->flags & FLAG_PARENTDIR))
+     {
+@@ -2667,7 +2669,7 @@ static void output_source_idl( struct makefile *make, struct incl_file *source,
+ 
+     output_filenames_obj_dir( make, targets );
+     output( ": %s\n", tools_path( make, "widl" ));
+-    output( "\t%s -o $@", tools_path( make, "widl" ) );
++    output( "\t@%s -o $@", tools_path( make, "widl" ) );
+     output_filenames( target_flags );
+     output_filenames( make->include_args );
+     output_filenames( make->define_args );
+@@ -2676,6 +2678,7 @@ static void output_source_idl( struct makefile *make, struct incl_file *source,
+     output_filenames( get_expanded_file_local_var( make, obj, "EXTRAIDLFLAGS" ));
+     output_filename( source->filename );
+     output( "\n" );
++  output( "\t@echo [WIDL] $@\n" );
+     output_filenames_obj_dir( make, targets );
+     output( ": %s", source->filename );
+     output_filenames( source->dependencies );
+@@ -2869,7 +2872,7 @@ static void output_source_spec( struct makefile *make, struct incl_file *source,
+     output_filename( tools_path( make, "winebuild" ));
+     output_filename( tools_path( make, "winegcc" ));
+     output( "\n" );
+-    output( "\t%s -s -o $@", tools_path( make, "winegcc" ));
++    output( "\t@%s -s -o $@", tools_path( make, "winegcc" ));
+     output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
+     if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
+     output_filenames( target_flags );
+@@ -2881,6 +2884,7 @@ static void output_source_spec( struct makefile *make, struct incl_file *source,
+     output_filenames( all_libs );
+     output_filename( "$(LDFLAGS)" );
+     output( "\n" );
++  output( "\t@echo [WINEGCC] $@\n" );
+ 
+     if (crosstarget)
+     {
+@@ -2902,7 +2906,7 @@ static void output_source_spec( struct makefile *make, struct incl_file *source,
+         output_filename( tools_path( make, "winebuild" ));
+         output_filename( tools_path( make, "winegcc" ));
+         output( "\n" );
+-        output( "\t%s -s -o $@ -b %s", tools_path( make, "winegcc" ), crosstarget );
++        output( "\t@%s -s -o $@ -b %s", tools_path( make, "winegcc" ), crosstarget );
+         output_filename( strmake( "-B%s", tools_dir_path( make, "winebuild" )));
+         if (tools_dir) output_filename( strmake( "--sysroot=%s", top_obj_dir_path( make, "" )));
+         output_filename( "--lib-suffix=.cross.a" );
+@@ -2913,6 +2917,7 @@ static void output_source_spec( struct makefile *make, struct incl_file *source,
+         output_filenames( all_libs );
+         output_filename( "$(LDFLAGS)" );
+         output( "\n" );
++      output( "\t@echo [WINEGCC-CROSS] $@\n" );
+     }
+ }
+ 
+@@ -2936,7 +2941,7 @@ static void output_source_default( struct makefile *make, struct incl_file *sour
+     if (source->file->flags & FLAG_C_IMPLIB) strarray_add( &make->implib_objs, strmake( "%s.o", obj ));
+     strarray_add( is_dll_src ? &make->clean_files : &make->object_files, strmake( "%s.o", obj ));
+     output( "%s.o: %s\n", obj_dir_path( make, obj ), source->filename );
+-    output( "\t$(CC) -c -o $@ %s", source->filename );
++    output( "\t@$(CC) -c -o $@ %s", source->filename );
+     output_filenames( make->include_args );
+     output_filenames( make->define_args );
+     output_filenames( extradefs );
+@@ -2949,6 +2954,7 @@ static void output_source_default( struct makefile *make, struct incl_file *sour
+     output_filenames( cpp_flags );
+     output_filename( "$(CFLAGS)" );
+     output( "\n" );
++  output( "\t@echo [CC] %s\n", source->filename);
+     if (crosstarget && need_cross)
+     {
+         strarray_add( is_dll_src ? &make->clean_files : &make->crossobj_files, strmake( "%s.cross.o", obj ));

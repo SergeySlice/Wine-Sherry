@@ -1,0 +1,145 @@
+From d0e09d8d75a3552d01dd8fa07d487b8de6ad287a Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Tue, 8 Mar 2016 21:05:53 +0300
+Subject: [PATCH 5/9] d3dx9: implement array selectors in effect.
+
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/d3dx9_36/effect.c       | 57 ++++++++++++++++++++++++++++++++++----------
+ dlls/d3dx9_36/tests/effect.c |  6 ++---
+ 2 files changed, 48 insertions(+), 15 deletions(-)
+
+diff --git a/dlls/d3dx9_36/effect.c b/dlls/d3dx9_36/effect.c
+index d9e585a..f26acf1 100644
+--- a/dlls/d3dx9_36/effect.c
++++ b/dlls/d3dx9_36/effect.c
+@@ -2510,8 +2510,39 @@ static HRESULT d3dx9_get_param_value_ptr(struct ID3DXEffectImpl *effect, struct
+             *out_param = param;
+             return D3D_OK;
+         case ST_ARRAY_SELECTOR:
+-            FIXME("Array selector.\n");
+-            break;
++        {
++            struct d3dx_parameter array_idx_par;
++            unsigned int array_idx;
++            unsigned int *idx_value;
++            HRESULT hr;
++
++            if (!param->param_eval)
++            {
++                FIXME("Preshader structure is null.\n");
++                return D3DERR_INVALIDCALL;
++            }
++            memset(&array_idx_par, 0, sizeof(array_idx_par));
++            array_idx_par.data = &array_idx;
++            array_idx_par.type = D3DXPT_INT;
++            array_idx_par.bytes = sizeof(array_idx);
++            array_idx_par.rows = array_idx_par.columns = 1;
++            hr = d3dx_evaluate_parameter(param->param_eval, &array_idx_par, (void **)&idx_value);
++            if (FAILED(hr))
++                return hr;
++
++            param = param->referenced_param;
++            TRACE("Array index %u.\n", *idx_value);
++            if (*idx_value >= param->element_count)
++            {
++                ERR("Computed array index %u is out of bound %u.\n", *idx_value, param->element_count);
++                return D3DERR_INVALIDCALL;
++            }
++            param = &param->members[*idx_value];
++
++            *param_value = param->data;
++            *out_param = param;
++            return D3D_OK;
++        }
+         case ST_FXLC:
+             if (param->param_eval)
+             {
+@@ -2657,15 +2688,15 @@ HRESULT d3dx_set_shader_const_state(IDirect3DDevice9 *device, enum SHADER_CONSTA
+         {D3DXPT_BOOL,  sizeof(BOOL),      "SCT_PSBOOL"},
+         {D3DXPT_INT,   sizeof(int) * 4,   "SCT_PSINT"},
+     };
+-    UINT nelem;
++    unsigned int element_count;
+ 
+     if (op < 0 || op > SCT_PSINT)
+     {
+         FIXME("Unknown op %u.\n", op);
+         return D3DERR_INVALIDCALL;
+     }
+-    nelem = param->bytes / const_tbl[op].elem_size;
+-    TRACE("%s, index %u, %u elements.\n", const_tbl[op].name, index, nelem);
++    element_count = param->bytes / const_tbl[op].elem_size;
++    TRACE("%s, index %u, element_count %u.\n", const_tbl[op].name, index, element_count);
+     if (param->type != const_tbl[op].type)
+     {
+         FIXME("Unexpected param type %u.\n", param->type);
+@@ -2680,17 +2711,17 @@ HRESULT d3dx_set_shader_const_state(IDirect3DDevice9 *device, enum SHADER_CONSTA
+     switch (op)
+     {
+         case SCT_VSFLOAT:
+-            return IDirect3DDevice9_SetVertexShaderConstantF(device, index, (const float *)value_ptr, nelem);
++            return IDirect3DDevice9_SetVertexShaderConstantF(device, index, (const float *)value_ptr, element_count);
+         case SCT_VSBOOL:
+-            return IDirect3DDevice9_SetVertexShaderConstantB(device, index, (const BOOL *)value_ptr, nelem);
++            return IDirect3DDevice9_SetVertexShaderConstantB(device, index, (const BOOL *)value_ptr, element_count);
+         case SCT_VSINT:
+-            return IDirect3DDevice9_SetVertexShaderConstantI(device, index, (const int *)value_ptr, nelem);
++            return IDirect3DDevice9_SetVertexShaderConstantI(device, index, (const int *)value_ptr, element_count);
+         case SCT_PSFLOAT:
+-            return IDirect3DDevice9_SetPixelShaderConstantF(device, index, (const float *)value_ptr, nelem);
++            return IDirect3DDevice9_SetPixelShaderConstantF(device, index, (const float *)value_ptr, element_count);
+         case SCT_PSBOOL:
+-            return IDirect3DDevice9_SetPixelShaderConstantB(device, index, (const BOOL *)value_ptr, nelem);
++            return IDirect3DDevice9_SetPixelShaderConstantB(device, index, (const BOOL *)value_ptr, element_count);
+         case SCT_PSINT:
+-            return IDirect3DDevice9_SetPixelShaderConstantI(device, index, (const int *)value_ptr, nelem);
++            return IDirect3DDevice9_SetPixelShaderConstantI(device, index, (const int *)value_ptr, element_count);
+     }
+     return D3D_OK;
+ }
+@@ -2706,7 +2737,9 @@ static HRESULT d3dx9_apply_state(struct ID3DXEffectImpl *effect, struct d3dx_pas
+     TRACE("operation %u, index %u, type %u.\n", state->operation, state->index, state->type);
+     hr = d3dx9_get_param_value_ptr(effect, pass, state, &param_value, &param);
+     if (FAILED(hr))
+-        return hr;
++        /* Native d3dx returns OK from BeginPass or Commit involving out of bound array
++            access, and does not touch affected state. */
++        return D3D_OK;
+ 
+     switch (state_table[state->operation].class)
+     {
+diff --git a/dlls/d3dx9_36/tests/effect.c b/dlls/d3dx9_36/tests/effect.c
+index 079383a..5e732bd 100644
+--- a/dlls/d3dx9_36/tests/effect.c
++++ b/dlls/d3dx9_36/tests/effect.c
+@@ -3725,7 +3725,7 @@ static void test_effect_preshader(IDirect3DDevice9 *device)
+     hr = effect->lpVtbl->SetVector(effect, par, &fvect2);
+     ok(hr == D3D_OK, "SetFloatArray failed, hr %#x.\n", hr);
+     hr = effect->lpVtbl->BeginPass(effect, 1);
+-    todo_wine ok(hr == D3D_OK, "Got result %#x.\n", hr);
++    ok(hr == D3D_OK, "Got result %#x.\n", hr);
+ 
+     hr = IDirect3DDevice9_GetVertexShader(device, &vshader);
+     ok(hr == D3D_OK, "Got result %#x.\n", hr);
+@@ -3737,7 +3737,7 @@ static void test_effect_preshader(IDirect3DDevice9 *device)
+     hr = IDirect3DVertexShader9_GetFunction(vshader, byte_code, &byte_code_size);
+     ok(hr == D3D_OK, "Got result %#x.\n", hr);
+     ok(byte_code_size > 1, "Got unexpected byte code size %u.\n", byte_code_size);
+-    todo_wine ok(!memcmp(byte_code,
++    ok(!memcmp(byte_code,
+             &test_effect_preshader_effect_blob[TEST_EFFECT_PRESHADER_VSHADER_POS +
+             1 * TEST_EFFECT_PRESHADER_VSHADER_LEN], byte_code_size),
+             "Incorrect shader selected.\n");
+@@ -3750,7 +3750,7 @@ static void test_effect_preshader(IDirect3DDevice9 *device)
+     hr = effect->lpVtbl->SetVector(effect, par, &fvect1);
+     ok(hr == D3D_OK, "SetFloatArray failed, hr %#x.\n", hr);
+     hr = effect->lpVtbl->CommitChanges(effect);
+-    todo_wine ok(hr == D3D_OK, "Got result %#x.\n", hr);
++    ok(hr == D3D_OK, "Got result %#x.\n", hr);
+     hr = IDirect3DDevice9_GetVertexShader(device, &vshader);
+     ok(hr == D3D_OK, "Got result %#x.\n", hr);
+     ok(!vshader, "Incorrect shader selected.\n");
+-- 
+2.5.0
+

@@ -1,0 +1,122 @@
+commit a040e9adb0af9086c1c617cd8cb66ab37eba3fc5
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Mon Feb 11 19:50:31 2019 +0300
+
+    apply staging 46564
+    
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+
+diff --git a/dlls/bcrypt/bcrypt.spec b/dlls/bcrypt/bcrypt.spec
+index 052a099..4946ee5 100644
+--- a/dlls/bcrypt/bcrypt.spec
++++ b/dlls/bcrypt/bcrypt.spec
+@@ -7,11 +7,11 @@
+ @ stdcall BCryptCreateHash(ptr ptr ptr long ptr long long)
+ @ stdcall BCryptDecrypt(ptr ptr long ptr ptr long ptr long ptr long)
+ @ stub BCryptDeleteContext
+-@ stub BCryptDeriveKey
++@ stdcall BCryptDeriveKey(ptr wstr ptr ptr long ptr long)
+ @ stdcall BCryptDeriveKeyPBKDF2(ptr ptr long ptr long int64 ptr long long)
+ @ stdcall BCryptDestroyHash(ptr)
+ @ stdcall BCryptDestroyKey(ptr)
+-@ stub BCryptDestroySecret
++@ stdcall BCryptDestroySecret(ptr)
+ @ stdcall BCryptDuplicateHash(ptr ptr ptr long long)
+ @ stdcall BCryptDuplicateKey(ptr ptr ptr long long)
+ @ stdcall BCryptEncrypt(ptr ptr long ptr ptr long ptr long ptr long)
+@@ -44,7 +44,7 @@
+ @ stdcall BCryptRemoveContextFunction(long wstr long wstr)
+ @ stdcall BCryptRemoveContextFunctionProvider(long wstr long wstr wstr)
+ @ stub BCryptResolveProviders
+-@ stub BCryptSecretAgreement
++@ stdcall BCryptSecretAgreement(ptr ptr ptr long)
+ @ stub BCryptSetAuditingInterface
+ @ stub BCryptSetContextFunctionProperty
+ @ stdcall BCryptSetProperty(ptr wstr ptr long long)
+diff --git a/dlls/bcrypt/bcrypt_main.c b/dlls/bcrypt/bcrypt_main.c
+index 38d006b..36166c1 100644
+--- a/dlls/bcrypt/bcrypt_main.c
++++ b/dlls/bcrypt/bcrypt_main.c
+@@ -1568,6 +1568,29 @@ NTSTATUS WINAPI BCryptDeriveKeyPBKDF2( BCRYPT_ALG_HANDLE handle,
+     return STATUS_SUCCESS;
+ }
+ 
++NTSTATUS WINAPI BCryptSecretAgreement(BCRYPT_KEY_HANDLE handle, BCRYPT_KEY_HANDLE key, BCRYPT_SECRET_HANDLE *secret, ULONG flags)
++{
++    FIXME( "%p, %p, %p, %08x\n", handle, key, secret, flags );
++
++    if(secret)
++        *secret = (BCRYPT_SECRET_HANDLE *)0xDEADFEED;
++
++    return STATUS_SUCCESS;
++}
++
++NTSTATUS WINAPI BCryptDestroySecret(BCRYPT_SECRET_HANDLE secret)
++{
++    FIXME( "%p\n", secret );
++    return STATUS_SUCCESS;
++}
++
++NTSTATUS WINAPI BCryptDeriveKey(BCRYPT_SECRET_HANDLE secret, LPCWSTR kdf, BCryptBufferDesc *parameter,
++        PUCHAR derived, ULONG derived_size, ULONG *result, ULONG flags)
++{
++    FIXME( "%p, %s, %p, %p, %d, %p, %08x\n", secret, debugstr_w(kdf), parameter, derived, derived_size, result, flags );
++    return STATUS_INTERNAL_ERROR;
++}
++
+ BOOL WINAPI DllMain( HINSTANCE hinst, DWORD reason, LPVOID reserved )
+ {
+     switch (reason)
+diff --git a/include/bcrypt.h b/include/bcrypt.h
+index ba78c1d..a5abf23 100644
+--- a/include/bcrypt.h
++++ b/include/bcrypt.h
+@@ -204,6 +204,20 @@ typedef struct _BCRYPT_KEY_DATA_BLOB_HEADER
+     ULONG cbKeyData;
+ } BCRYPT_KEY_DATA_BLOB_HEADER, *PBCRYPT_KEY_DATA_BLOB_HEADER;
+ 
++typedef struct _BCryptBuffer
++{
++    ULONG cbBuffer;
++    ULONG BufferType;
++    void  *pvBuffer;
++} BCryptBuffer, *PBCryptBuffer;
++
++typedef struct _BCryptBufferDesc
++{
++    ULONG ulVersion;
++    ULONG cBuffers;
++    PBCryptBuffer pBuffers;
++} BCryptBufferDesc, *PBCryptBufferDesc;
++
+ #define BCRYPT_KEY_DATA_BLOB_MAGIC    0x4d42444b
+ #define BCRYPT_KEY_DATA_BLOB_VERSION1 1
+ 
+@@ -211,6 +225,7 @@ typedef PVOID BCRYPT_ALG_HANDLE;
+ typedef PVOID BCRYPT_KEY_HANDLE;
+ typedef PVOID BCRYPT_HANDLE;
+ typedef PVOID BCRYPT_HASH_HANDLE;
++typedef PVOID BCRYPT_SECRET_HANDLE;
+ 
+ /* Flags for BCryptGenRandom */
+ #define BCRYPT_RNG_USE_ENTROPY_IN_BUFFER 0x00000001
+@@ -225,9 +240,11 @@ typedef PVOID BCRYPT_HASH_HANDLE;
+ NTSTATUS WINAPI BCryptCloseAlgorithmProvider(BCRYPT_ALG_HANDLE, ULONG);
+ NTSTATUS WINAPI BCryptCreateHash(BCRYPT_ALG_HANDLE, BCRYPT_HASH_HANDLE *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptDecrypt(BCRYPT_KEY_HANDLE, PUCHAR, ULONG, VOID *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG *, ULONG);
++NTSTATUS WINAPI BCryptDeriveKey(BCRYPT_SECRET_HANDLE, LPCWSTR, BCryptBufferDesc*, PUCHAR, ULONG, ULONG *, ULONG);
+ NTSTATUS WINAPI BCryptDeriveKeyPBKDF2(BCRYPT_ALG_HANDLE, PUCHAR, ULONG, PUCHAR, ULONG, ULONGLONG, PUCHAR, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptDestroyHash(BCRYPT_HASH_HANDLE);
+ NTSTATUS WINAPI BCryptDestroyKey(BCRYPT_KEY_HANDLE);
++NTSTATUS WINAPI BCryptDestroySecret(BCRYPT_SECRET_HANDLE);
+ NTSTATUS WINAPI BCryptDuplicateHash(BCRYPT_HASH_HANDLE, BCRYPT_HASH_HANDLE *, UCHAR *, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptEncrypt(BCRYPT_KEY_HANDLE, PUCHAR, ULONG, VOID *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG *, ULONG);
+ NTSTATUS WINAPI BCryptEnumAlgorithms(ULONG, ULONG *, BCRYPT_ALGORITHM_IDENTIFIER **, ULONG);
+@@ -242,6 +259,7 @@ NTSTATUS WINAPI BCryptHash(BCRYPT_ALG_HANDLE, PUCHAR, ULONG, PUCHAR, ULONG, PUCH
+ NTSTATUS WINAPI BCryptHashData(BCRYPT_HASH_HANDLE, PUCHAR, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptImportKeyPair(BCRYPT_ALG_HANDLE, BCRYPT_KEY_HANDLE, LPCWSTR, BCRYPT_KEY_HANDLE *, UCHAR *, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptOpenAlgorithmProvider(BCRYPT_ALG_HANDLE *, LPCWSTR, LPCWSTR, ULONG);
++NTSTATUS WINAPI BCryptSecretAgreement(BCRYPT_KEY_HANDLE, BCRYPT_KEY_HANDLE, BCRYPT_SECRET_HANDLE *, ULONG);
+ NTSTATUS WINAPI BCryptSetProperty(BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG);
+ NTSTATUS WINAPI BCryptVerifySignature(BCRYPT_KEY_HANDLE, void *, UCHAR *, ULONG, UCHAR *, ULONG, ULONG);
+ 

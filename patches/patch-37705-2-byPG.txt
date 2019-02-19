@@ -1,0 +1,280 @@
+From b9f038c515c5828cc91994acbecc76befaea92da Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Tue, 12 Feb 2019 03:18:31 +0300
+Subject: [PATCH] wined3d: Do not treat  _SAMP_SRGB_TEXTURE state as a boolean
+ value.
+
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/d3d9/tests/visual.c       | 126 +++++++++++++++++++++++++++++++--
+ dlls/wined3d/context.c         |   2 +-
+ dlls/wined3d/cs.c              |   6 ++
+ dlls/wined3d/state.c           |   8 +--
+ dlls/wined3d/wined3d_private.h |   1 +
+ 5 files changed, 132 insertions(+), 11 deletions(-)
+
+diff --git a/dlls/d3d9/tests/visual.c b/dlls/d3d9/tests/visual.c
+index 800e07bdc9..8d9fd141f0 100644
+--- a/dlls/d3d9/tests/visual.c
++++ b/dlls/d3d9/tests/visual.c
+@@ -8898,6 +8898,7 @@ static void srgbtexture_test(void)
+     D3DCOLOR color;
+     ULONG refcount;
+     HWND window;
++    DWORD value;
+     HRESULT hr;
+ 
+     static const float quad[] =
+@@ -8940,26 +8941,139 @@ static void srgbtexture_test(void)
+ 
+     hr = IDirect3DDevice9_BeginScene(device);
+     ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
+-
+-    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, TRUE);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 0x7e41882a);
+     ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 0x7e41882a, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
+     hr = IDirect3DDevice9_SetFVF(device, D3DFVF_XYZ | D3DFVF_TEX1);
+     ok(SUCCEEDED(hr), "Failed to set FVF, hr %#x.\n", hr);
+     hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
+     ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x007f7f7f, 1), "sRGB quad has color 0x%08x, expected 0x007f7f7f.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
+ 
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 100);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 100, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
+     hr = IDirect3DDevice9_EndScene(device);
+     ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x007f7f7f, 1), "sRGB quad has color 0x%08x, expected 0x007f7f7f.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
+ 
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 2);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 2, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x007f7f7f, 1), "sRGB quad has color 0x%08x, expected 0x007f7f7f.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
++
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 3);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 3, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x007f7f7f, 1), "sRGB quad has color 0x%08x, expected 0x007f7f7f.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
++
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, TRUE);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == TRUE, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x00363636, 1), "sRGB quad has color 0x%08x, expected 0x00363636.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
++
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 0x7e41882a);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 0x7e41882a, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
+     color = getPixelColor(device, 320, 240);
+     ok(color_match(color, 0x00363636, 1), "sRGB quad has color 0x%08x, expected 0x00363636.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
+ 
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 0);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 0, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x007f7f7f, 1), "sRGB quad has color 0x%08x, expected 0x007f7f7f.\n", color);
+     hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
+     ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
+ 
++    hr = IDirect3DDevice9_BeginScene(device);
++    ok(SUCCEEDED(hr), "Failed to begin scene, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_SetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, 0x7e41882a);
++    ok(SUCCEEDED(hr), "Failed to set sampler state, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_GetSamplerState(device, 0, D3DSAMP_SRGBTEXTURE, &value);
++    ok(SUCCEEDED(hr), "Failed to get sampler state, hr %#x.\n", hr);
++    ok(value == 0x7e41882a, "Unexpected D3DSAMP_SRGBTEXTURE value %#x.\n");
++    hr = IDirect3DDevice9_SetFVF(device, D3DFVF_XYZ | D3DFVF_TEX1);
++    ok(SUCCEEDED(hr), "Failed to set FVF, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, quad, 5 * sizeof(float));
++    ok(SUCCEEDED(hr), "Failed to draw, hr %#x.\n", hr);
++    hr = IDirect3DDevice9_EndScene(device);
++    ok(SUCCEEDED(hr), "Failed to end scene, hr %#x.\n", hr);
++    color = getPixelColor(device, 320, 240);
++    ok(color_match(color, 0x007f7f7f, 1), "sRGB quad has color 0x%08x, expected 0x007f7f7f.\n", color);
++    hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
++    ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
+     IDirect3DTexture9_Release(texture);
+     refcount = IDirect3DDevice9_Release(device);
+     ok(!refcount, "Device has %u references left.\n", refcount);
++
+ done:
+     IDirect3D9_Release(d3d);
+     DestroyWindow(window);
+@@ -24897,7 +25011,7 @@ START_TEST(visual)
+     IDirect3D9_Release(d3d);
+ 
+     test_sanity();
+-    depth_clamp_test();
++    /*depth_clamp_test();
+     stretchrect_test();
+     test_multisample_stretch_rect();
+     lighting_test();
+@@ -24912,9 +25026,9 @@ START_TEST(visual)
+     offscreen_test();
+     ds_size_test();
+     test_blend();
+-    test_shademode();
++    test_shademode();*/
+     srgbtexture_test();
+-    release_buffer_test();
++    /*release_buffer_test();
+     float_texture_test();
+     g16r16_texture_test();
+     pixelshader_blending_test();
+@@ -25009,5 +25123,5 @@ START_TEST(visual)
+     test_null_format();
+     test_map_synchronisation();
+     test_color_vertex();
+-    test_sysmem_draw();
++    test_sysmem_draw();*/
+ }
+diff --git a/dlls/wined3d/context.c b/dlls/wined3d/context.c
+index ae94daba2e..639f9d608e 100644
+--- a/dlls/wined3d/context.c
++++ b/dlls/wined3d/context.c
+@@ -3719,7 +3719,7 @@ static void context_preload_texture(struct wined3d_context *context,
+     if (!(texture = state->textures[idx]))
+         return;
+ 
+-    wined3d_texture_load(texture, context, state->sampler_states[idx][WINED3D_SAMP_SRGB_TEXTURE]);
++    wined3d_texture_load(texture, context, state->sampler_srgb_texture_states[idx]);
+ }
+ 
+ /* Context activation is done by the caller. */
+diff --git a/dlls/wined3d/cs.c b/dlls/wined3d/cs.c
+index 96c6360dc3..623cacdc3f 100644
+--- a/dlls/wined3d/cs.c
++++ b/dlls/wined3d/cs.c
+@@ -1649,6 +1649,12 @@ static void wined3d_cs_exec_set_sampler_state(struct wined3d_cs *cs, const void
+     const struct wined3d_cs_set_sampler_state *op = data;
+ 
+     cs->state.sampler_states[op->sampler_idx][op->state] = op->value;
++
++    if (cs->state.sampler_states[op->sampler_idx][WINED3D_SAMP_SRGB_TEXTURE] == 1)
++        cs->state.sampler_srgb_texture_states[op->sampler_idx] = TRUE;
++    else if (!cs->state.sampler_states[op->sampler_idx][WINED3D_SAMP_SRGB_TEXTURE])
++        cs->state.sampler_srgb_texture_states[op->sampler_idx] = FALSE;
++
+     device_invalidate_state(cs->device, STATE_SAMPLER(op->sampler_idx));
+ }
+ 
+diff --git a/dlls/wined3d/state.c b/dlls/wined3d/state.c
+index 78d6d6c72c..1c7228a184 100644
+--- a/dlls/wined3d/state.c
++++ b/dlls/wined3d/state.c
+@@ -3536,7 +3536,7 @@ static enum wined3d_texture_address wined3d_texture_gl_address_mode(const struct
+ 
+ static void wined3d_sampler_desc_from_sampler_states(struct wined3d_sampler_desc *desc,
+         const struct wined3d_context *context, const DWORD *sampler_states,
+-        const struct wined3d_texture_gl *texture_gl)
++        const struct wined3d_texture_gl *texture_gl, BOOL srgb_decode)
+ {
+     union
+     {
+@@ -3574,7 +3574,7 @@ static void wined3d_sampler_desc_from_sampler_states(struct wined3d_sampler_desc
+         desc->max_anisotropy = 1;
+     desc->compare = texture_gl->t.resource.format_flags & WINED3DFMT_FLAG_SHADOW;
+     desc->comparison_func = WINED3D_CMP_LESSEQUAL;
+-    desc->srgb_decode = sampler_states[WINED3D_SAMP_SRGB_TEXTURE];
++    desc->srgb_decode = srgb_decode;
+ 
+     if (!(texture_gl->t.resource.format_flags & WINED3DFMT_FLAG_FILTERING))
+     {
+@@ -3615,14 +3615,14 @@ static void sampler(struct wined3d_context *context, const struct wined3d_state
+     if (state->textures[sampler_idx])
+     {
+         struct wined3d_texture_gl *texture_gl = wined3d_texture_gl(state->textures[sampler_idx]);
+-        BOOL srgb = state->sampler_states[sampler_idx][WINED3D_SAMP_SRGB_TEXTURE];
++        BOOL srgb = state->sampler_srgb_texture_states[sampler_idx];
+         const DWORD *sampler_states = state->sampler_states[sampler_idx];
+         struct wined3d_device *device = context->device;
+         struct wined3d_sampler_desc desc;
+         struct wined3d_sampler *sampler;
+         struct wine_rb_entry *entry;
+ 
+-        wined3d_sampler_desc_from_sampler_states(&desc, context, sampler_states, texture_gl);
++        wined3d_sampler_desc_from_sampler_states(&desc, context, sampler_states, texture_gl, srgb);
+ 
+         wined3d_texture_gl_bind(texture_gl, context, srgb);
+ 
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index f1fa23d005..c9eb2edefe 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -2950,6 +2950,7 @@ struct wined3d_state
+ 
+     struct wined3d_texture *textures[MAX_COMBINED_SAMPLERS];
+     DWORD sampler_states[MAX_COMBINED_SAMPLERS][WINED3D_HIGHEST_SAMPLER_STATE + 1];
++    BOOL sampler_srgb_texture_states[MAX_COMBINED_SAMPLERS];
+     DWORD texture_states[MAX_TEXTURES][WINED3D_HIGHEST_TEXTURE_STATE + 1];
+ 
+     struct wined3d_matrix transforms[HIGHEST_TRANSFORMSTATE + 1];
+-- 
+2.20.1

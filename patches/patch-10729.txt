@@ -1,18 +1,38 @@
-/ *****************************************************************************/
-static D3DPICKRECORD FakeRecord = { 0x2, 0, 0x1, 0};
 
-static HRESULT WINAPI d3d_device1_GetPickRecords(IDirect3DDevice *iface,
-        DWORD *count, D3DPICKRECORD *records)
-{
-    FIXME("iface %p, count %p, records %p stub!\n", iface, count, records);
-    *count = 1;
+commit 70d477054427ab5e4e4e29d77fa80046926403e7
+Author: Sergey Isakov <isakov-sl@bk.ru>
+Date:   Sun Feb 17 09:16:48 2019 +0300
+
+    patch 10729
     
-    if (!records) {
-        return DDERR_INVALIDPARAMS;
-    }
-    *records = FakeRecord;
+    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
 
-    return D3D_OK;
-}
-
-/*****************************************************************************/
+diff --git a/dlls/ddraw/device.c b/dlls/ddraw/device.c
+index d2f11c1..722c590 100644
+--- a/dlls/ddraw/device.c
++++ b/dlls/ddraw/device.c
+@@ -1007,14 +1007,23 @@ static HRESULT WINAPI d3d_device1_Pick(IDirect3DDevice *iface, IDirect3DExecuteB
+  *  D3D_OK, because it's a stub
+  *
+  *****************************************************************************/
++static D3DPICKRECORD FakeRecord = { 0x2, 0, 0x1, 0};
++
+ static HRESULT WINAPI d3d_device1_GetPickRecords(IDirect3DDevice *iface,
+-        DWORD *count, D3DPICKRECORD *records)
++                                                 DWORD *count, D3DPICKRECORD *records)
+ {
+     FIXME("iface %p, count %p, records %p stub!\n", iface, count, records);
++    *count = 1;
++
++    if (!records) {
++        return DDERR_INVALIDPARAMS;
++    }
++    *records = FakeRecord;
+ 
+     return D3D_OK;
+ }
+ 
++
+ /*****************************************************************************
+  * IDirect3DDevice7::EnumTextureformats
+  *
