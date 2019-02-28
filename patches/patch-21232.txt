@@ -1,0 +1,139 @@
+From e92e60b9ea8d9a67ee78b44862991fec7259b2ae Mon Sep 17 00:00:00 2001
+From: Fabian Maurer <dark.shadow4@web.de>
+Date: Sun, 15 Jul 2018 21:08:37 +0200
+Subject: [PATCH] ntdll: Provide hookable 64bit native api thunks
+
+---
+ dlls/ntdll/loader.c        |  2 ++
+ dlls/ntdll/signal_x86_64.c | 33 +++++++++++++++++++++++++++++++++
+ dlls/ntdll/thread.c        |  3 +++
+ tools/winebuild/spec32.c   | 22 +++++++++-------------
+ 4 files changed, 47 insertions(+), 13 deletions(-)
+
+diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
+index b0c1b22495..983131ac41 100644
+--- a/dlls/ntdll/loader.c
++++ b/dlls/ntdll/loader.c
+@@ -3700,6 +3700,8 @@ static void user_shared_data_init(void)
+     user_shared_data->u.TickCount.High2Time  = 0;
+     user_shared_data->u.TickCount.High1Time  = -1;
+ 
++    user_shared_data->SystemCallPad[0] = 1;
++
+     /* copy to correct address and make it non accessible */
+     memcpy(user_shared_data_external, user_shared_data, sizeof(*user_shared_data));
+     NtProtectVirtualMemory( NtCurrentProcess(), &addr, &data_size, PAGE_NOACCESS, &old_prot );
+diff --git a/dlls/ntdll/signal_x86_64.c b/dlls/ntdll/signal_x86_64.c
+index bf21b4257a..c5b31e14c0 100644
+--- a/dlls/ntdll/signal_x86_64.c
++++ b/dlls/ntdll/signal_x86_64.c
+@@ -3037,6 +3037,32 @@ static inline BOOL handle_interrupt( unsigned int interrupt, EXCEPTION_RECORD *r
+     }
+ }
+ 
++extern void *__wine_syscall_table;
++extern void __wine_syscall_dispatcher(void);
++
++static BOOL handle_syscall(void *sigcontext)
++{
++    ucontext_t *context = (ucontext_t *)sigcontext;
++
++    void **pointer_eip_void = (void**)&context->uc_mcontext.gregs[REG_RIP];
++    u_int8_t **pointer_eip = (u_int8_t**)&context->uc_mcontext.gregs[REG_RIP];
++    int interrupt_number = context->uc_mcontext.gregs[REG_RAX];
++
++    /* If it's "int 0x2e", route executing to the actual function */
++    if ((*pointer_eip)[0] == 0xCD && (*pointer_eip)[1] == 0x2e)
++    {
++       void **syscalls = &__wine_syscall_table;
++       *pointer_eip_void = syscalls[interrupt_number];
++       return TRUE;
++    }
++    return FALSE;
++}
++
++static void segv_handler_syscall(int signal, siginfo_t *siginfo, void *sigcontext)
++{
++    handle_syscall(sigcontext);
++}
++
+ 
+ /**********************************************************************
+  *		segv_handler
+@@ -3064,6 +3090,9 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+         return;
+     }
+ 
++    if (handle_syscall(sigcontext))
++        return;
++
+     rec = setup_exception( sigcontext, raise_segv_exception );
+ 
+     switch(TRAP_sig(ucontext))
+@@ -3446,6 +3475,10 @@ void signal_init_process(void)
+  */
+ void signal_init_early(void)
+ {
++    struct sigaction action;
++    action.sa_sigaction = &segv_handler_syscall;
++    action.sa_flags = SA_SIGINFO;
++    sigaction(SIGSEGV, &action, NULL);
+ }
+ 
+ /**********************************************************************
+diff --git a/dlls/ntdll/thread.c b/dlls/ntdll/thread.c
+index 40304dbab1..7a67d297de 100644
+--- a/dlls/ntdll/thread.c
++++ b/dlls/ntdll/thread.c
+@@ -446,6 +446,7 @@ HANDLE thread_init(void)
+     NTSTATUS status;
+     struct ntdll_thread_data *thread_data;
+     static struct debug_info debug_info;  /* debug info for initial thread */
++    u_int8_t* system_call_pad;
+ 
+     virtual_init();
+     signal_init_early();
+@@ -462,6 +463,8 @@ HANDLE thread_init(void)
+         exit(1);
+     }
+     user_shared_data_external = addr;
++    system_call_pad = (u_int8_t*)user_shared_data_external + 0x308;
++    *system_call_pad = 1;
+     memcpy( user_shared_data->NtSystemRoot, default_windirW, sizeof(default_windirW) );
+ 
+     /* allocate and initialize the PEB */
+diff --git a/tools/winebuild/spec32.c b/tools/winebuild/spec32.c
+index 48a9abef08..0b154f42cc 100644
+--- a/tools/winebuild/spec32.c
++++ b/tools/winebuild/spec32.c
+@@ -452,19 +452,15 @@ static void output_syscall_thunks_x64( DLLSPEC *spec )
+         output( "\t%s\n", func_declaration(name) );
+         output( "%s\n", asm_globl(name) );
+         output_cfi( ".cfi_startproc" );
+-        output( "\t.byte 0xb8\n" );                                         /* mov eax, SYSCALL */
+-        output( "\t.long %d\n", i );
+-        if (target_platform == PLATFORM_APPLE)
+-        {
+-            output( "\t.byte 0xff,0x14,0x25\n" );                           /* call [0x7ffe1000] */
+-            output( "\t.long 0x7ffe1000\n" );
+-        }
+-        else
+-        {
+-            output( "\t.byte 0x65,0xff,0x14,0x25\n" );                      /* call qword ptr gs:[0x100] */
+-            output( "\t.long 0x100\n");
+-        }
+-        output( "\t.byte 0xc3\n" );                                        /* ret */
++        output ("\t.byte 0x4c,0x8b,0xd1\n" );           /* mov r10, rcx */
++        output( "\t.byte 0xb8\n" );                     /* mov eax, SYSCALL */
++        output( "\t.long %d\n", i );                    /* mov eax, SYSCALL */
++        output( "\ttestb $0x1,0x7ffe0308\n" );          /* test byte ptr SharedUserData.SystemCallPad, 1 */
++        output( "\t.byte 0x75,0x03\n" );                /* jne (over syscall) */
++        output( "\tsyscall\n" );
++        output( "\tret\n" );
++        output( "\tint $0x2e\n" );
++        output( "\tret\n" );
+         output_cfi( ".cfi_endproc" );
+         output_function_size( name );
+     }
+-- 
+2.18.0

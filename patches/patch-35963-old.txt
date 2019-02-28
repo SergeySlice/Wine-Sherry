@@ -1,0 +1,70 @@
+diff --git a/dlls/wined3d/state.c b/dlls/wined3d/state.c
+index f450f20..2285c6f 100644
+--- a/dlls/wined3d/state.c
++++ b/dlls/wined3d/state.c
+@@ -4739,17 +4739,25 @@
+                 checkGLcall("glLightfv");
+                 gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_SPOT_CUTOFF, lightInfo->cutoff);
+                 checkGLcall("glLightf");
+-                /* Attenuation - Are these right? guessing... */
+-                gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_CONSTANT_ATTENUATION,
++                if (lightInfo->OriginalParms.attenuation0 >= 0.0)
++                {
++                    gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_CONSTANT_ATTENUATION,
+                         lightInfo->OriginalParms.attenuation0);
+-                checkGLcall("glLightf");
+-                gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_LINEAR_ATTENUATION,
++                    checkGLcall("glLightf");
++                }
++                if (lightInfo->OriginalParms.attenuation1 >= 0.0)
++                {
++                    gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_LINEAR_ATTENUATION,
+                         lightInfo->OriginalParms.attenuation1);
+-                checkGLcall("glLightf");
++                    checkGLcall("glLightf");
++                }
+                 if (quad_att < lightInfo->OriginalParms.attenuation2)
+                     quad_att = lightInfo->OriginalParms.attenuation2;
+-                gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_QUADRATIC_ATTENUATION, quad_att);
+-                checkGLcall("glLightf");
++                if (quad_att >= 0.0)
++                {
++                    gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_QUADRATIC_ATTENUATION, quad_att);
++                    checkGLcall("glLightf");
++                }
+                 /* FIXME: Range */
+                 break;
+ 
+@@ -4764,17 +4772,25 @@
+                 checkGLcall("glLightf");
+                 gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_SPOT_CUTOFF, lightInfo->cutoff);
+                 checkGLcall("glLightf");
+-                /* Attenuation - Are these right? guessing... */
+-                gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_CONSTANT_ATTENUATION,
++                if (lightInfo->OriginalParms.attenuation0 >= 0.0)
++                {
++                    gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_CONSTANT_ATTENUATION,
+                         lightInfo->OriginalParms.attenuation0);
+-                checkGLcall("glLightf");
+-                gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_LINEAR_ATTENUATION,
++                    checkGLcall("glLightf");
++                }
++                if (lightInfo->OriginalParms.attenuation1 >= 0.0)
++                {
++                    gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_LINEAR_ATTENUATION,
+                         lightInfo->OriginalParms.attenuation1);
+-                checkGLcall("glLightf");
++                    checkGLcall("glLightf");
++                }
+                 if (quad_att < lightInfo->OriginalParms.attenuation2)
+                     quad_att = lightInfo->OriginalParms.attenuation2;
+-                gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_QUADRATIC_ATTENUATION, quad_att);
+-                checkGLcall("glLightf");
++                if (quad_att >= 0.0)
++                {
++                    gl_info->gl_ops.gl.p_glLightf(GL_LIGHT0 + Index, GL_QUADRATIC_ATTENUATION, quad_att);
++                    checkGLcall("glLightf");
++                }
+                 /* FIXME: Range */
+                 break;
+ 

@@ -1,0 +1,103 @@
+diff --git a/dlls/wined3d/adapter_gl.c b/dlls/wined3d/adapter_gl.c
+index acfed24b53..c467699916 100644
+--- a/dlls/wined3d/adapter_gl.c
++++ b/dlls/wined3d/adapter_gl.c
+@@ -832,6 +832,13 @@ static BOOL match_broken_viewport_subpixel_bits(const struct wined3d_gl_info *gl
+     return !wined3d_caps_gl_ctx_test_viewport_subpixel_bits(ctx);
+ }
+ 
++static BOOL match_disable_nvidia_fastmath(const struct wined3d_gl_info *gl_info,
++        struct wined3d_caps_gl_ctx *ctx, const char *gl_renderer, enum wined3d_gl_vendor gl_vendor,
++        enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
++{
++    return wined3d_settings.disable_nvidia_fastmath && gl_vendor == GL_VENDOR_NVIDIA;
++}
++
+ static void quirk_apple_glsl_constants(struct wined3d_gl_info *gl_info)
+ {
+     /* MacOS needs uniforms for relative addressing offsets. This can
+@@ -986,6 +993,11 @@ static void quirk_broken_viewport_subpixel_bits(struct wined3d_gl_info *gl_info)
+     }
+ }
+ 
++static void quirk_disable_nvidia_fastmath(struct wined3d_gl_info *gl_info)
++{
++    gl_info->quirks |= WINED3D_QUIRK_DISABLE_NVIDIA_FASTMATH;
++}
++
+ static const struct wined3d_gpu_description *query_gpu_description(const struct wined3d_gl_info *gl_info,
+         UINT64 *vram_bytes)
+ {
+@@ -1130,6 +1142,11 @@ static void fixup_extensions(struct wined3d_gl_info *gl_info, struct wined3d_cap
+             quirk_broken_viewport_subpixel_bits,
+             "NVIDIA viewport subpixel bits bug"
+         },
++        {
++            match_disable_nvidia_fastmath,
++            quirk_disable_nvidia_fastmath,
++            "Disabling fastmath optimization on NVIDIA."
++        },
+     };
+ 
+     for (i = 0; i < ARRAY_SIZE(quirk_table); ++i)
+diff --git a/dlls/wined3d/glsl_shader.c b/dlls/wined3d/glsl_shader.c
+index 660005f57e..b82949cf7c 100644
+--- a/dlls/wined3d/glsl_shader.c
++++ b/dlls/wined3d/glsl_shader.c
+@@ -2786,6 +2786,9 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
+             shader_addline(buffer, ";\n");
+         }
+     }
++
++    if (gl_info->quirks & WINED3D_QUIRK_DISABLE_NVIDIA_FASTMATH)
++        shader_addline(buffer, "#pragma optionNV(fastmath off)\n");
+ }
+ 
+ /* Prototypes */
+diff --git a/dlls/wined3d/wined3d_main.c b/dlls/wined3d/wined3d_main.c
+index ca83d0ae0d..68fb1295a4 100644
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -83,6 +83,7 @@ struct wined3d_settings wined3d_settings =
+     TRUE,           /* Prefer multisample textures to multisample renderbuffers. */
+     ~0u,            /* Don't force a specific sample count by default. */
+     FALSE,          /* Don't range check relative addressing indices in float constants. */
++    TRUE,/*FALSE,*/ /* Do not disable fastmath optimization on NVIDIA. */
+     ~0U,            /* No VS shader model limit by default. */
+     ~0U,            /* No HS shader model limit by default. */
+     ~0U,            /* No DS shader model limit by default. */
+@@ -293,6 +294,13 @@ static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
+             TRACE("Checking relative addressing indices in float constants.\n");
+             wined3d_settings.check_float_constants = TRUE;
+         }
++        if (!get_config_key(hkey, appkey, "DisableNVIDIAFastmath", buffer, size)
++                && !strcmp(buffer, "enabled"))
++        {
++            TRACE("Disabling fastmath optimization on NVIDIA.\n");
++            wined3d_settings.disable_nvidia_fastmath = TRUE;
++        }
++
+         if (!get_config_key_dword(hkey, appkey, "MaxShaderModelVS", &wined3d_settings.max_sm_vs))
+             TRACE("Limiting VS shader model to %u.\n", wined3d_settings.max_sm_vs);
+         if (!get_config_key_dword(hkey, appkey, "MaxShaderModelHS", &wined3d_settings.max_sm_hs))
+diff --git a/dlls/wined3d/wined3d_private.h b/dlls/wined3d/wined3d_private.h
+index cd49789c1b..e7755af531 100644
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -71,6 +71,7 @@
+ #define WINED3D_QUIRK_INFO_LOG_SPAM             0x00000080
+ #define WINED3D_QUIRK_LIMITED_TEX_FILTERING     0x00000100
+ #define WINED3D_QUIRK_BROKEN_ARB_FOG            0x00000200
++#define WINED3D_QUIRK_DISABLE_NVIDIA_FASTMATH   0x00000400
+ 
+ struct fragment_pipeline;
+ struct wined3d_context;
+@@ -391,6 +392,7 @@ struct wined3d_settings
+     unsigned int multisample_textures;
+     unsigned int sample_count;
+     BOOL check_float_constants;
++    BOOL disable_nvidia_fastmath;
+     unsigned int max_sm_vs;
+     unsigned int max_sm_hs;
+     unsigned int max_sm_ds;
+	 
