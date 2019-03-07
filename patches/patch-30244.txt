@@ -1,0 +1,44 @@
+From 1f9c6e3e678a0193e48bd8798f61579066646129 Mon Sep 17 00:00:00 2001
+From: Paul Gofman <gofmanp@gmail.com>
+Date: Thu, 17 Jan 2019 16:41:33 +0300
+Subject: [PATCH] advapi32, rsaenh: Allow for SHA1 compute.
+
+Signed-off-by: Paul Gofman <gofmanp@gmail.com>
+---
+ dlls/advapi32/crypt.c | 5 +++++
+ dlls/rsaenh/rsaenh.c  | 4 ++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/dlls/advapi32/crypt.c b/dlls/advapi32/crypt.c
+index ab1e5982da..43c606710f 100644
+--- a/dlls/advapi32/crypt.c
++++ b/dlls/advapi32/crypt.c
+@@ -367,6 +367,11 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
+ 	TRACE("(%p, %s, %s, %d, %08x)\n", phProv, debugstr_w(pszContainer),
+ 		debugstr_w(pszProvider), dwProvType, dwFlags);
+ 
++    if (dwProvType == PROV_DSS)
++    {
++        dwProvType = PROV_RSA_FULL;
++    }
++
+ 	if (dwProvType < 1 || dwProvType > MAXPROVTYPES)
+ 	{
+ 		SetLastError(NTE_BAD_PROV_TYPE);
+diff --git a/dlls/rsaenh/rsaenh.c b/dlls/rsaenh/rsaenh.c
+index c22b3dcaf1..fa05468b18 100644
+--- a/dlls/rsaenh/rsaenh.c
++++ b/dlls/rsaenh/rsaenh.c
+@@ -627,6 +627,10 @@ static inline BOOL init_hash(CRYPTHASH *pCryptHash) {
+         
+     switch (pCryptHash->aiAlgid) 
+     {
++        case CALG_SHA1:
++            init_hash_impl(CALG_SHA1, &pCryptHash->context);
++            return TRUE;
++
+         case CALG_HMAC:
+             if (pCryptHash->pHMACInfo) { 
+                 const PROV_ENUMALGS_EX *pAlgInfo;
+-- 
+2.20.1
