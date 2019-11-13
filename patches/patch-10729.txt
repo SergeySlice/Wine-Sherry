@@ -1,38 +1,553 @@
+>From cefcde5da92d671d81a174821c263a0448e6f106 Mon Sep 17 00:00:00 2001
+From: Matthew Wong <itsmattkc@gmail.com>
+Date: Wed, 31 Jul 2019 23:22:08 -0700
+Subject: [PATCH] ddraw: implement Pick() and GetPickRecords().
 
-commit 70d477054427ab5e4e4e29d77fa80046926403e7
-Author: Sergey Isakov <isakov-sl@bk.ru>
-Date:   Sun Feb 17 09:16:48 2019 +0300
+Implement functions used by some games (notably LEGO Island) for
+determining which 3D object in a scene was clicked by the mouse cursor.
+Fighting Steel also uses this function for mouse over. Previous stubs
+would cause LEGO Island to crash upon any click and Fighting Steel
+to crash on game start. Providing the minimum functionality to prevent
+crashes still rendered large portions of the game inaccessible without
+them implemented.
 
-    patch 10729
-    
-    Signed-off-by: Sergey Isakov <isakov-sl@bk.ru>
+Picking has been implemented by reusing the code from
+d3d_execute_buffer_execute() with the drawing functions removed
+leaving the core vertex processing and adding click tests for creating
+an array of D3DPICKRECORDs.
 
+Adds a D3DPICKRECORD array and DWORD counter to d3d_device. These are
+initiated in d3d_device_init(), allocated/written in 
+d3d_execute_buffer_execute_pick(), and accessed/read in
+d3d_device1_GetPickRecords(). The counter is used to determine the array
+size (0 meaning not ptr is not allocated). The array is free'd when
+necessary in d3d_execute_buffer_execute_pick(),
+d3d_device1_GetPickRecords(), and d3d_device_inner_Release().
+
+Wine-Bug: https://bugs.winehq.org/show_bug.cgi?id=10729
+Signed-off-by: Matthew Wong <itsmattkc@gmail.com>
+
+---
+ dlls/ddraw/ddraw_private.h |   8 +
+ dlls/ddraw/device.c        |  61 +++++-
+ dlls/ddraw/executebuffer.c | 373 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 437 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/ddraw/ddraw_private.h b/dlls/ddraw/ddraw_private.h
+index 11861f2a12..b2d9e9c2f8 100644
+--- a/dlls/ddraw/ddraw_private.h
++++ b/dlls/ddraw/ddraw_private.h
+@@ -326,6 +326,10 @@ struct d3d_device
+     struct d3d_viewport *current_viewport;
+     D3DVIEWPORT7 active_viewport;
+ 
++    /* Pick data */
++    D3DPICKRECORD* pick_records;
++    DWORD pick_record_count;
++
+     /* Required to keep track which of two available texture blending modes in d3ddevice3 is used */
+     BOOL legacyTextureBlending;
+     D3DTEXTUREBLEND texture_map_blend;
+@@ -561,6 +565,10 @@ struct d3d_execute_buffer *unsafe_impl_from_IDirect3DExecuteBuffer(IDirect3DExec
+ HRESULT d3d_execute_buffer_execute(struct d3d_execute_buffer *execute_buffer,
+         struct d3d_device *device) DECLSPEC_HIDDEN;
+ 
++/* The execute pick function */
++HRESULT d3d_execute_buffer_execute_pick(struct d3d_execute_buffer *execute_buffer,
++        struct d3d_device *device, D3DRECT *rect) DECLSPEC_HIDDEN;
++
+ /*****************************************************************************
+  * IDirect3DVertexBuffer
+  *****************************************************************************/
 diff --git a/dlls/ddraw/device.c b/dlls/ddraw/device.c
-index d2f11c1..722c590 100644
+index 690332dbdc..b79ede0ac3 100644
 --- a/dlls/ddraw/device.c
 +++ b/dlls/ddraw/device.c
-@@ -1007,14 +1007,23 @@ static HRESULT WINAPI d3d_device1_Pick(IDirect3DDevice *iface, IDirect3DExecuteB
-  *  D3D_OK, because it's a stub
+@@ -306,6 +306,11 @@ static ULONG WINAPI d3d_device_inner_Release(IUnknown *iface)
+             IDirect3DDevice3_DeleteViewport(&This->IDirect3DDevice3_iface, &vp->IDirect3DViewport3_iface);
+         }
+ 
++        /* Free pick records array if any are allocated */
++        if (This->pick_record_count > 0) {
++            free(This->pick_records);
++        }
++
+         TRACE("Releasing render target %p.\n", This->rt_iface);
+         rt_iface = This->rt_iface;
+         This->rt_iface = NULL;
+@@ -982,16 +987,36 @@ static HRESULT WINAPI d3d_device1_NextViewport(IDirect3DDevice *iface,
+  *        x2 and y2 are ignored.
+  *
+  * Returns:
+- *  D3D_OK because it's a stub
++ *  D3D_OK on success
++ *  DDERR_INVALIDPARAMS if any of the parameters == NULL
   *
   *****************************************************************************/
-+static D3DPICKRECORD FakeRecord = { 0x2, 0, 0x1, 0};
-+
- static HRESULT WINAPI d3d_device1_GetPickRecords(IDirect3DDevice *iface,
--        DWORD *count, D3DPICKRECORD *records)
-+                                                 DWORD *count, D3DPICKRECORD *records)
+ static HRESULT WINAPI d3d_device1_Pick(IDirect3DDevice *iface, IDirect3DExecuteBuffer *buffer,
+         IDirect3DViewport *viewport, DWORD flags, D3DRECT *rect)
  {
-     FIXME("iface %p, count %p, records %p stub!\n", iface, count, records);
-+    *count = 1;
+-    FIXME("iface %p, buffer %p, viewport %p, flags %#x, rect %s stub!\n",
++    struct d3d_device *device = impl_from_IDirect3DDevice(iface);
++    struct d3d_execute_buffer *buffer_impl = unsafe_impl_from_IDirect3DExecuteBuffer(buffer);
++    struct d3d_viewport *viewport_impl = unsafe_impl_from_IDirect3DViewport(viewport);
++    HRESULT hr;
 +
-+    if (!records) {
++    TRACE("iface %p, buffer %p, viewport %p, flags %#x, rect %s.\n",
+             iface, buffer, viewport, flags, wine_dbgstr_rect((RECT *)rect));
+ 
+-    return D3D_OK;
++    /* Sanity checks */
++    if (!iface || !buffer || !viewport) {
 +        return DDERR_INVALIDPARAMS;
 +    }
-+    *records = FakeRecord;
++
++    if (FAILED(hr = IDirect3DDevice3_SetCurrentViewport
++            (&device->IDirect3DDevice3_iface, &viewport_impl->IDirect3DViewport3_iface)))
++        return hr;
++
++    /* Execute the pick */
++    wined3d_mutex_lock();
++    hr = d3d_execute_buffer_execute_pick(buffer_impl, device, rect);
++    wined3d_mutex_unlock();
++
++    return hr;
+ }
+ 
+ /*****************************************************************************
+@@ -1007,13 +1032,36 @@ static HRESULT WINAPI d3d_device1_Pick(IDirect3DDevice *iface, IDirect3DExecuteB
+  *  D3DPickRec: Address to store the resulting D3DPICKRECORD array.
+  *
+  * Returns:
+- *  D3D_OK, because it's a stub
++ *  D3D_OK
+  *
+  *****************************************************************************/
+ static HRESULT WINAPI d3d_device1_GetPickRecords(IDirect3DDevice *iface,
+         DWORD *count, D3DPICKRECORD *records)
+ {
+-    FIXME("iface %p, count %p, records %p stub!\n", iface, count, records);
++    struct d3d_device *device;
++
++    TRACE("iface %p, count %p, records %p.\n", iface, count, records);
++
++    wined3d_mutex_lock();
++
++    device = impl_from_IDirect3DDevice(iface);
++
++    /* Set count to the number of pick records we have */
++    *count = device->pick_record_count;
++
++    /* It is correct usage according to documentation to call this function with records == NULL
++       to retrieve *just* the record count, which the caller can use to allocate an appropriately
++       sized array, then call this function again with it. */
++    if (records && count) {
++        /* If we have a destination array and records to copy, copy them now */
++        memcpy(records, device->pick_records, sizeof(D3DPICKRECORD) * device->pick_record_count);
++
++        /* We're now done with the old pick records and can free them */
++        free(device->pick_records);
++        device->pick_record_count = 0;
++    }
++
++    wined3d_mutex_unlock();
  
      return D3D_OK;
  }
+@@ -6989,6 +7037,9 @@ static HRESULT d3d_device_init(struct d3d_device *device, struct ddraw *ddraw,
  
+     ddraw->d3ddevice = device;
+ 
++    /* Initialize pick records array */
++    device->pick_record_count = 0;
 +
- /*****************************************************************************
-  * IDirect3DDevice7::EnumTextureformats
-  *
+     wined3d_device_set_render_state(ddraw->wined3d_device, WINED3D_RS_ZENABLE,
+             d3d_device_update_depth_stencil(device));
+     if (version == 1) /* Color keying is initially enabled for version 1 devices. */
+diff --git a/dlls/ddraw/executebuffer.c b/dlls/ddraw/executebuffer.c
+index 80dbdfd88b..e090e8a7be 100644
+--- a/dlls/ddraw/executebuffer.c
++++ b/dlls/ddraw/executebuffer.c
+@@ -422,6 +422,379 @@ end_of_buffer:
+     return D3D_OK;
+ }
+ 
++BOOL edge_function(D3DTLVERTEX* a, D3DTLVERTEX* b, float px, float py) {
++    return ((px - a->u1.sx) * (b->u2.sy - a->u2.sy) - (py - a->u2.sy) * (b->u1.sx - a->u1.sx) >= 0);
++}
++
++BOOL tri_contains_pixel(D3DTLVERTEX* v0, D3DTLVERTEX* v1, D3DTLVERTEX* v2, float px, float py) {
++    return edge_function(v0, v1, px, py) && edge_function(v1, v2, px, py) && edge_function(v2, v0, px, py);
++}
++
++#define TRIANGLE_SIZE 3
++HRESULT d3d_execute_buffer_execute_pick(struct d3d_execute_buffer *buffer, struct d3d_device *device, D3DRECT *rect)
++{
++    DWORD is = buffer->data.dwInstructionOffset;
++    char *instr = (char *)buffer->desc.lpData + is;
++    unsigned int i, j;
++    struct wined3d_map_desc map_desc, vert_map_desc;
++    struct wined3d_box box = {0};
++    HRESULT hr;
++    const unsigned int vertex_size = get_flexible_vertex_size(D3DFVF_TLVERTEX);
++    D3DTLVERTEX verts[TRIANGLE_SIZE];
++
++    /* Check for any un-freed pick records */
++    if (device->pick_record_count > 0) {
++        free(device->pick_records);
++        device->pick_record_count = 0;
++    }
++
++    TRACE("ExecutePickData :\n");
++    if (TRACE_ON(ddraw))
++        _dump_executedata(&(buffer->data));
++
++    for (;;)
++    {
++        D3DINSTRUCTION *current = (D3DINSTRUCTION *)instr;
++        BYTE size;
++        WORD count;
++        DWORD instruction_offset;
++
++        count = current->wCount;
++        size = current->bSize;
++        instr += sizeof(*current);
++        instruction_offset = (DWORD)instr - (DWORD)buffer->desc.lpData - is;
++
++        switch (current->bOpcode)
++        {
++            case D3DOP_POINT:
++            {
++                instr += sizeof(instr) * count;
++                break;
++            }
++
++            case D3DOP_LINE:
++                instr += sizeof(instr) * count;
++                break;
++
++            case D3DOP_TRIANGLE:
++            {
++                unsigned int index_pos = buffer->index_pos, index_count;
++                TRACE("TRIANGLE         (%d)\n", count);
++
++                if (!count)
++                    break;
++
++                wined3d_device_set_primitive_type(device->wined3d_device, WINED3D_PT_TRIANGLELIST, 0);
++
++                index_count = count * TRIANGLE_SIZE;
++
++                /* NOTE: Unsure of the purpose if this if-else block. May be unnecessary here. */
++                if (buffer->index_size < index_count)
++                {
++                    unsigned int new_size = max(buffer->index_size * 2, index_count);
++                    struct wined3d_buffer *new_buffer;
++                    struct wined3d_buffer_desc desc;
++
++                    desc.byte_width = new_size * sizeof(WORD);
++                    desc.usage = WINED3DUSAGE_DYNAMIC | WINED3DUSAGE_STATICDECL;
++                    desc.bind_flags = WINED3D_BIND_INDEX_BUFFER;
++                    desc.access = WINED3D_RESOURCE_ACCESS_GPU | WINED3D_RESOURCE_ACCESS_MAP_W;
++                    desc.misc_flags = 0;
++                    desc.structure_byte_stride = 0;
++
++                    if (FAILED(hr = wined3d_buffer_create(device->wined3d_device, &desc,
++                            NULL, NULL, &ddraw_null_wined3d_parent_ops, &new_buffer)))
++                        return hr;
++
++                    buffer->index_size = new_size;
++                    if (buffer->index_buffer)
++                        wined3d_buffer_decref(buffer->index_buffer);
++                    buffer->index_buffer = new_buffer;
++                    index_pos = 0;
++                }
++                else if (buffer->index_size - index_count < index_pos)
++                {
++                    index_pos = 0;
++                }
++
++                box.left = index_pos * sizeof(WORD);
++                box.right = (index_pos + index_count) * sizeof(WORD);
++                if (FAILED(hr = wined3d_resource_map(wined3d_buffer_get_resource(buffer->index_buffer), 0, &map_desc,
++                        &box, WINED3D_MAP_WRITE | (index_pos ? WINED3D_MAP_NOOVERWRITE : WINED3D_MAP_DISCARD))))
++                    return hr;
++
++                for (i = 0; i < count; ++i)
++                {
++                    D3DTRIANGLE *ci = (D3DTRIANGLE *)instr;
++                    TRACE("  v1: %d  v2: %d  v3: %d\n",ci->u1.v1, ci->u2.v2, ci->u3.v3);
++                    TRACE("  Flags : ");
++                    if (TRACE_ON(ddraw))
++                    {
++                        /* Wireframe */
++                        if (ci->wFlags & D3DTRIFLAG_EDGEENABLE1)
++                            TRACE("EDGEENABLE1 ");
++                        if (ci->wFlags & D3DTRIFLAG_EDGEENABLE2)
++                            TRACE("EDGEENABLE2 ");
++                        if (ci->wFlags & D3DTRIFLAG_EDGEENABLE1)
++                            TRACE("EDGEENABLE3 ");
++                        /* Strips / Fans */
++                        if (ci->wFlags == D3DTRIFLAG_EVEN)
++                            TRACE("EVEN ");
++                        if (ci->wFlags == D3DTRIFLAG_ODD)
++                            TRACE("ODD ");
++                        if (ci->wFlags == D3DTRIFLAG_START)
++                            TRACE("START ");
++                        if ((ci->wFlags > 0) && (ci->wFlags < 30))
++                            TRACE("STARTFLAT(%u) ", ci->wFlags);
++                        TRACE("\n");
++                    }
++
++                    /* Get D3DTLVERTEX objects for each triangle vertex */
++                    for (j=0;j<TRIANGLE_SIZE;j++) {
++
++                        /* Get index of vertex from D3DTRIANGLE struct */
++                        switch (j) {
++                        case 0: box.left = vertex_size * ci->u1.v1; break;
++                        case 1: box.left = vertex_size * ci->u2.v2; break;
++                        case 2: box.left = vertex_size * ci->u3.v3; break;
++                        }
++
++                        box.right = box.left + vertex_size;
++                        if (FAILED(hr = wined3d_resource_map(wined3d_buffer_get_resource(buffer->dst_vertex_buffer),
++                                0, &vert_map_desc, &box, WINED3D_MAP_WRITE))) {
++                            return hr;
++                        } else {
++                            /* Copy vert data into stack array */
++                            verts[j] = *((D3DTLVERTEX*)vert_map_desc.data);
++
++                            wined3d_resource_unmap(wined3d_buffer_get_resource(buffer->dst_vertex_buffer), 0);
++                        }
++                    }
++
++                    /* See if the triangle contains the pixel coordinates */
++                    if (tri_contains_pixel(&verts[0], &verts[1], &verts[2], rect->u1.x1, rect->u2.y1)) {
++                        D3DPICKRECORD* record;
++
++                        /* Create new array to fit one more record */
++                        DWORD new_record_count = device->pick_record_count + 1;
++                        D3DPICKRECORD* new_record_array = malloc(sizeof(D3DPICKRECORD) * new_record_count);
++                        if (device->pick_record_count > 0) {
++                            memcpy(new_record_array, device->pick_records, sizeof(D3DPICKRECORD) * device->pick_record_count);
++                            free(device->pick_records);
++                        }
++
++                        /* Fill record parameters */
++                        record = &new_record_array[device->pick_record_count];
++
++                        record->bOpcode = current->bOpcode;
++                        record->bPad = 0;
++                        record->dwOffset = instruction_offset;
++                        record->dvZ = max(verts[0].u3.sz, max(verts[1].u3.sz, verts[2].u3.sz));
++
++                        /* Point device info to new record information */
++                        device->pick_records = new_record_array;
++                        device->pick_record_count = new_record_count;
++                    }
++
++                    instr += size;
++                }
++
++                wined3d_resource_unmap(wined3d_buffer_get_resource(buffer->index_buffer), 0);
++
++                buffer->index_pos = index_pos + index_count;
++                break;
++            }
++
++            case D3DOP_MATRIXLOAD:
++                WARN("MATRIXLOAD-s     (%u)\n", count);
++                instr += count * size;
++                break;
++
++            case D3DOP_MATRIXMULTIPLY:
++                TRACE("MATRIXMULTIPLY   (%d)\n", count);
++                for (i = 0; i < count; ++i)
++                {
++                    D3DMATRIXMULTIPLY *ci = (D3DMATRIXMULTIPLY *)instr;
++                    D3DMATRIX *a, *b, *c;
++
++                    a = ddraw_get_object(&device->handle_table, ci->hDestMatrix - 1, DDRAW_HANDLE_MATRIX);
++                    b = ddraw_get_object(&device->handle_table, ci->hSrcMatrix1 - 1, DDRAW_HANDLE_MATRIX);
++                    c = ddraw_get_object(&device->handle_table, ci->hSrcMatrix2 - 1, DDRAW_HANDLE_MATRIX);
++
++                    if (!a || !b || !c)
++                    {
++                        ERR("Invalid matrix handle (a %#x -> %p, b %#x -> %p, c %#x -> %p).\n",
++                                ci->hDestMatrix, a, ci->hSrcMatrix1, b, ci->hSrcMatrix2, c);
++                    }
++                    else
++                    {
++                        TRACE("dst %p, src1 %p, src2 %p.\n", a, b, c);
++                        multiply_matrix(a, c, b);
++                    }
++
++                    instr += size;
++                }
++                break;
++
++            case D3DOP_STATETRANSFORM:
++                TRACE("STATETRANSFORM   (%d)\n", count);
++                for (i = 0; i < count; ++i)
++                {
++                    D3DSTATE *ci = (D3DSTATE *)instr;
++                    D3DMATRIX *m;
++
++                    m = ddraw_get_object(&device->handle_table, ci->u2.dwArg[0] - 1, DDRAW_HANDLE_MATRIX);
++                    if (!m)
++                    {
++                        ERR("Invalid matrix handle %#x.\n", ci->u2.dwArg[0]);
++                    }
++                    else
++                    {
++                        if (ci->u1.dtstTransformStateType == D3DTRANSFORMSTATE_WORLD)
++                            device->world = ci->u2.dwArg[0];
++                        if (ci->u1.dtstTransformStateType == D3DTRANSFORMSTATE_VIEW)
++                            device->view = ci->u2.dwArg[0];
++                        if (ci->u1.dtstTransformStateType == D3DTRANSFORMSTATE_PROJECTION)
++                            device->proj = ci->u2.dwArg[0];
++                        IDirect3DDevice3_SetTransform(&device->IDirect3DDevice3_iface,
++                                ci->u1.dtstTransformStateType, m);
++                    }
++
++                    instr += size;
++                }
++                break;
++
++            case D3DOP_STATELIGHT:
++                TRACE("STATELIGHT       (%d)\n", count);
++                instr += size * count;
++                break;
++
++            case D3DOP_STATERENDER:
++                TRACE("STATERENDER      (%d)\n", count);
++                instr += size * count;
++                break;
++
++            case D3DOP_PROCESSVERTICES:
++                TRACE("PROCESSVERTICES  (%d)\n", count);
++
++                for (i = 0; i < count; ++i)
++                {
++                    D3DPROCESSVERTICES *ci = (D3DPROCESSVERTICES *)instr;
++                    DWORD op = ci->dwFlags & D3DPROCESSVERTICES_OPMASK;
++
++                    TRACE("  start %u, dest %u, count %u, flags %#x.\n",
++                            ci->wStart, ci->wDest, ci->dwCount, ci->dwFlags);
++
++                    if (ci->dwFlags & D3DPROCESSVERTICES_UPDATEEXTENTS)
++                        FIXME("D3DPROCESSVERTICES_UPDATEEXTENTS not implemented.\n");
++                    if (ci->dwFlags & D3DPROCESSVERTICES_NOCOLOR)
++                        FIXME("D3DPROCESSVERTICES_NOCOLOR not implemented.\n");
++
++                    switch (op)
++                    {
++                        case D3DPROCESSVERTICES_TRANSFORMLIGHT:
++                        case D3DPROCESSVERTICES_TRANSFORM:
++                            wined3d_device_set_stream_source(device->wined3d_device, 0,
++                                    buffer->src_vertex_buffer, buffer->src_vertex_pos, sizeof(D3DVERTEX));
++                            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_LIGHTING,
++                                    op == D3DPROCESSVERTICES_TRANSFORMLIGHT && !!device->material);
++                            wined3d_device_set_vertex_declaration(device->wined3d_device,
++                                    ddraw_find_decl(device->ddraw, op == D3DPROCESSVERTICES_TRANSFORMLIGHT
++                                    ? D3DFVF_VERTEX : D3DFVF_LVERTEX));
++                            wined3d_device_process_vertices(device->wined3d_device, ci->wStart, ci->wDest,
++                                    ci->dwCount, buffer->dst_vertex_buffer, NULL, 0, D3DFVF_TLVERTEX);
++                            break;
++
++                        case D3DPROCESSVERTICES_COPY:
++                            box.left = (buffer->src_vertex_pos + ci->wStart) * sizeof(D3DTLVERTEX);
++                            box.right = box.left + ci->dwCount * sizeof(D3DTLVERTEX);
++                            box.top = box.front = 0;
++                            box.bottom = box.back = 1;
++                            wined3d_device_copy_sub_resource_region(device->wined3d_device,
++                                    wined3d_buffer_get_resource(buffer->dst_vertex_buffer), 0,
++                                    ci->wDest * sizeof(D3DTLVERTEX), 0, 0,
++                                    wined3d_buffer_get_resource(buffer->src_vertex_buffer), 0, &box, 0);
++                            break;
++
++                        default:
++                            FIXME("Unhandled vertex processing op %#x.\n", op);
++                            break;
++                    }
++
++                    instr += size;
++                }
++                break;
++
++            case D3DOP_TEXTURELOAD:
++                TRACE("TEXTURELOAD    (%u)\n", count);
++
++                instr += size * count;
++                break;
++
++            case D3DOP_EXIT:
++                TRACE("EXIT             (%u)\n", count);
++                instr += size;
++                goto end_of_buffer;
++
++            case D3DOP_BRANCHFORWARD:
++                TRACE("BRANCHFORWARD    (%d)\n", count);
++                for (i = 0; i < count; ++i)
++                {
++                    D3DBRANCH *ci = (D3DBRANCH *)instr;
++
++                    if ((buffer->data.dsStatus.dwStatus & ci->dwMask) == ci->dwValue)
++                    {
++                        if (!ci->bNegate)
++                        {
++                            TRACE(" Branch to %d\n", ci->dwOffset);
++                            if (ci->dwOffset) {
++                                instr = (char*)current + ci->dwOffset;
++                                break;
++                            }
++                        }
++                    }
++                    else
++                    {
++                        if (ci->bNegate)
++                        {
++                            TRACE(" Branch to %d\n", ci->dwOffset);
++                            if (ci->dwOffset) {
++                                instr = (char*)current + ci->dwOffset;
++                                break;
++                            }
++                        }
++                    }
++
++                    instr += size;
++                }
++                break;
++
++            case D3DOP_SPAN:
++                WARN("SPAN-s           (%u)\n", count);
++                instr += count * size;
++                break;
++
++            case D3DOP_SETSTATUS:
++                TRACE("SETSTATUS        (%d)\n", count);
++                for (i = 0; i < count; ++i)
++                {
++                    buffer->data.dsStatus = *(D3DSTATUS *)instr;
++                    instr += size;
++                }
++                break;
++
++            default:
++                ERR("Unhandled OpCode %#x.\n",current->bOpcode);
++                instr += count * size;
++                break;
++        }
++    }
++
++end_of_buffer:
++    return D3D_OK;
++}
++#undef TRIANGLE_SIZE
++
+ static inline struct d3d_execute_buffer *impl_from_IDirect3DExecuteBuffer(IDirect3DExecuteBuffer *iface)
+ {
+     return CONTAINING_RECORD(iface, struct d3d_execute_buffer, IDirect3DExecuteBuffer_iface);
+-- 
+2.22.0
+
