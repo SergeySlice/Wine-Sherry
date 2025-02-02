@@ -3,6 +3,8 @@ They are mostly obsolete. They can't be applied to recent wine. They was develop
 Times to times I reverted some patches as nor more needed or no more working or no more compatible. Current Sherry sources can't be reproduced by applying these patches.
 Anyway this is a history.
 
+Meanwhile I applied some of these patches to the crossover-22.1.1 sources and got the best world wine engine.
+
 May be in future I have to begin ab ovo, erase the whole sherry sources and begin from clean winehq applying these patches one by one and adopting them to new environment.
 
 License.
