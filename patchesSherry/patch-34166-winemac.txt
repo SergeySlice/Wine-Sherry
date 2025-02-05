@@ -1,0 +1,141 @@
+--- a/dlls/winemac.drv/cocoa_window.m	2014-02-25 18:44:40.000000000 +0100
++++ a/dlls/winemac.drv/cocoa_window.m	2014-02-25 18:43:39.000000000 +0100
+@@ -194,8 +194,6 @@
+
+ @property (retain, nonatomic) NSTimer* liveResizeDisplayTimer;
+
+-    - (void) updateColorSpace;
+-
+     - (BOOL) becameEligibleParentOrChild;
+     - (void) becameIneligibleChild;
+
+@@ -318,15 +316,12 @@
+             [pendingGlContexts addObject:context];
+             [self setNeedsDisplay:YES];
+         }
+-
+-        [(WineWindow*)[self window] updateColorSpace];
+     }
+
+     - (void) removeGLContext:(WineOpenGLContext*)context
+     {
+         [glContexts removeObjectIdenticalTo:context];
+         [pendingGlContexts removeObjectIdenticalTo:context];
+-        [(WineWindow*)[self window] updateColorSpace];
+     }
+
+     - (void) updateGLContexts
+@@ -335,11 +330,6 @@
+             context.needsUpdate = TRUE;
+     }
+
+-    - (BOOL) hasGLContext
+-    {
+-        return [glContexts count] || [pendingGlContexts count];
+-    }
+-
+     - (BOOL) acceptsFirstMouse:(NSEvent*)theEvent
+     {
+         return YES;
+@@ -1310,9 +1300,6 @@
+                 if (needEnableScreenUpdates)
+                     NSEnableScreenUpdates();
+
+-                if (!equalSizes)
+-                    [self updateColorSpace];
+-
+                 if (!enteringFullScreen &&
+                     [[NSProcessInfo processInfo] systemUptime] - enteredFullScreenTime > 1.0)
+                     nonFullscreenFrame = frame;
+@@ -1571,38 +1558,6 @@
+             [super toggleFullScreen:sender];
+     }
+
+-    // We normally use the generic/calibrated RGB color space for the window,
+-    // rather than the device color space, to avoid expensive color conversion
+-    // which slows down drawing.  However, for windows displaying OpenGL, having
+-    // a different color space than the screen greatly reduces frame rates, often
+-    // limiting it to the display refresh rate.
+-    //
+-    // To avoid this, we switch back to the screen color space whenever the
+-    // window is covered by a view with an attached OpenGL context.
+-    - (void) updateColorSpace
+-    {
+-        NSRect contentRect = [[self contentView] frame];
+-        BOOL coveredByGLView = FALSE;
+-        for (WineContentView* view in [[self contentView] subviews])
+-        {
+-            if ([view hasGLContext])
+-            {
+-                NSRect frame = [view convertRect:[view bounds] toView:nil];
+-                if (NSContainsRect(frame, contentRect))
+-                {
+-                    coveredByGLView = TRUE;
+-                    break;
+-                }
+-            }
+-        }
+-
+-        if (coveredByGLView)
+-            [self setColorSpace:nil];
+-        else
+-            [self setColorSpace:[NSColorSpace genericRGBColorSpace]];
+-    }
+-
+-
+     /*
+      * ---------- NSResponder method overrides ----------
+      */
+@@ -2436,7 +2391,6 @@
+                    name:NSApplicationDidChangeScreenParametersNotification
+                  object:NSApp];
+         [[window contentView] addSubview:view];
+-        [window updateColorSpace];
+     });
+
+     [pool release];
+@@ -2455,7 +2409,6 @@
+
+     OnMainThread(^{
+         NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+-        WineWindow* window = (WineWindow*)[view window];
+
+         [nc removeObserver:view
+                       name:NSViewGlobalFrameDidChangeNotification
+@@ -2465,7 +2418,6 @@
+                     object:NSApp];
+         [view removeFromSuperview];
+         [view release];
+-        [window updateColorSpace];
+     });
+
+     [pool release];
+@@ -2490,15 +2442,11 @@
+         BOOL changedWindow = (window && window != [view window]);
+         NSRect newFrame = NSRectFromCGRect(rect);
+         NSRect oldFrame = [view frame];
+-        BOOL needUpdateWindowColorSpace = FALSE;
+
+         if (changedWindow)
+         {
+-            WineWindow* oldWindow = (WineWindow*)[view window];
+             [view removeFromSuperview];
+-            [oldWindow updateColorSpace];
+             [[window contentView] addSubview:view];
+-            needUpdateWindowColorSpace = TRUE;
+         }
+
+         if (!NSEqualRects(oldFrame, newFrame))
+@@ -2512,11 +2460,8 @@
+             else
+                 [view setFrame:newFrame];
+             [view setNeedsDisplay:YES];
+-            needUpdateWindowColorSpace = TRUE;
+         }
+
+-        if (needUpdateWindowColorSpace)
+-            [(WineWindow*)[view window] updateColorSpace];
+     });
+
+     [pool release];
+

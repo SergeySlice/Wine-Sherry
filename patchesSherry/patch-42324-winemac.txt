@@ -1,0 +1,58 @@
+From 1390e483e86d27799c001339a7503bf217534170 Mon Sep 17 00:00:00 2001
+From: Ken Thomases <ken@codeweavers.com>
+Date: Tue, 26 Apr 2016 03:12:17 -0500
+Subject: EXPERIMENTAL: Require enumerated pixel formats to work across all
+ displays.
+To: wine-patches <wine-patches@winehq.org>
+
+Don't require that they use the specified renderer (except for unaccelerated).
+The renderer is just used to cull the search space.
+
+Does this change the enumerated pixel formats in common cases?
+---
+ dlls/winemac.drv/opengl.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/winemac.drv/opengl.c b/dlls/winemac.drv/opengl.c
+index 6e1f151..90d5384 100644
+--- a/dlls/winemac.drv/opengl.c
++++ b/dlls/winemac.drv/opengl.c
+@@ -651,10 +651,9 @@ static void enum_renderer_pixel_formats(renderer_properties renderer, CFMutableA
+     CGLPixelFormatAttribute attribs[64] = {
+         kCGLPFAMinimumPolicy,
+         kCGLPFAClosestPolicy,
+-        kCGLPFARendererID, renderer.renderer_id,
+-        kCGLPFASingleRenderer,
++        kCGLPFADisplayMask, active_displays_mask(),
+     };
+-    int n = 5, n_stack[16], n_stack_idx = -1;
++    int n = 4, n_stack[16], n_stack_idx = -1;
+     unsigned int tried_pixel_formats = 0, failed_pixel_formats = 0, dupe_pixel_formats = 0,
+                  new_pixel_formats = 0;
+     pixel_format request;
+@@ -666,7 +665,13 @@ static void enum_renderer_pixel_formats(renderer_properties renderer, CFMutableA
+         attribs[n++] = kCGLPFAAccelerated;
+         attribs[n++] = kCGLPFANoRecovery;
+     }
+-    else if (!allow_software_rendering)
++    else if (allow_software_rendering)
++    {
++        attribs[n++] = kCGLPFARendererID;
++        attribs[n++] = renderer.renderer_id;
++        attribs[n++] = kCGLPFASingleRenderer;
++    }
++    else
+     {
+         TRACE("ignoring software renderer because AllowSoftwareRendering is off\n");
+         return;
+@@ -1137,7 +1142,7 @@ static BOOL init_pixel_formats(void)
+ 
+     TRACE("()\n");
+ 
+-    err = CGLQueryRendererInfo(CGDisplayIDToOpenGLDisplayMask(CGMainDisplayID()), &renderer_info, &rendererCount);
++    err = CGLQueryRendererInfo(active_displays_mask(), &renderer_info, &rendererCount);
+     if (err)
+     {
+         WARN("CGLQueryRendererInfo failed (%d) %s\n", err, CGLErrorString(err));
+-- 
+2.10.2
