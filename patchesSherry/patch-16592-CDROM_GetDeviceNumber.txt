@@ -7,7 +7,7 @@ Message-ID: 4ADF90DF.4090401 () mymail ! mines ! edu
 [Download message RAW]
 
 ---
- dlls/ntdll/cdrom.c |  108
+ dlls/ntdll/unix/cdrom.c |  108
 +++++++++++++++++++++++++++++++++++++++++----------
  1 files changed, 87 insertions(+), 21 deletions(-)
 
@@ -16,10 +16,10 @@ Message-ID: 4ADF90DF.4090401 () mymail ! mines ! edu
 
 ["0001-ntdll-Implement-CDROM_GetDeviceNumber-on-Mac-OS.patch" (text/x-patch)]
 
-diff --git a/dlls/ntdll/cdrom.c b/dlls/ntdll/cdrom.c
+diff --git a/dlls/ntdll/unix/cdrom.c b/dlls/ntdll/unix/cdrom.c
 index 069ac01..1bda4a8 100644
---- a/dlls/ntdll/cdrom.c
-+++ b/dlls/ntdll/cdrom.c
+--- a/dlls/ntdll/unix/cdrom.c
++++ b/dlls/ntdll/unix/cdrom.c
 @@ -308,21 +308,16 @@ static int CDROM_MediaChanged(int dev)
  }
  #endif

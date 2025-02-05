@@ -125,43 +125,6 @@ index c225563..3f83cdd 100644
  
      TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p, "
              "unordered_access_view_start_slot %u, unordered_access_view_count %u, unordered_access_views %p, "
-diff --git a/dlls/d3d9/d3d9_main.c b/dlls/d3d9/d3d9_main.c
-index 9d0b1a7..f45b296 100644
---- a/dlls/d3d9/d3d9_main.c
-+++ b/dlls/d3d9/d3d9_main.c
-@@ -104,19 +104,31 @@ static HRESULT WINAPI uisv_DefaultUnimp()
- 
- static HRESULT WINAPI uisv_1par(DWORD p1)
- {
--    FIXME("uisv_4par called\n");
-+  static int once = 0;
-+  if (!once++) {
-+
-+    FIXME("uisv_1par called\n");
-+  }
-     return S_OK;
- }
- 
- static HRESULT WINAPI uisv_4par(DWORD p1, DWORD p2, DWORD p3, DWORD p4)
- {
-+  static int once = 0;
-+  if (!once++) {
-+
-     FIXME("uisv_4par called\n");
-+  }
-     return S_OK;
- }
- 
- static HRESULT WINAPI uisv_5par(DWORD p1, DWORD p2, DWORD p3, DWORD p4, DWORD p5)
- {
-+  static int once = 0;
-+  if (!once++) {
-     FIXME("uisv_5par called\n");
-+  }
-+
-     return S_OK;
- }
- 
 diff --git a/dlls/hal/hal.c b/dlls/hal/hal.c
 index 6ef8765..5fd51b2 100644
 --- a/dlls/hal/hal.c

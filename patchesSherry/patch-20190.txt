@@ -1,0 +1,44 @@
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index ba20495..d39d189 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -3767,6 +3767,14 @@ BOOL set_window_pos( WINDOWPOS *winpos, int parent_x, int parent_y )
+         }
+     }
+ 
++    if (winpos->hwndInsertAfter == HWND_TOPMOST || winpos->hwndInsertAfter == HWND_NOTOPMOST)
++    {
++       /* Fixes bug #20190, Windows ignores these windows' geometry sets */
++       DWORD style = get_window_long(winpos->hwnd, GWL_STYLE);
++       if ((style & (WS_POPUP | WS_CHILD)) == WS_CHILD)
++          return TRUE;
++    }
++
+     /* Make sure that coordinates are valid for WM_WINDOWPOSCHANGING */
+     if (!(winpos->flags & SWP_NOMOVE))
+     {
+diff --git a/fonts/marlett.ttf b/fonts/marlett.ttf
+old mode 100644
+new mode 100755
+index b3122c5..0db6b02
+Binary files a/fonts/marlett.ttf and b/fonts/marlett.ttf differ
+diff --git a/fonts/symbol.ttf b/fonts/symbol.ttf
+old mode 100644
+new mode 100755
+index 1fd5b4e..fd1c033
+Binary files a/fonts/symbol.ttf and b/fonts/symbol.ttf differ
+diff --git a/fonts/tahoma.ttf b/fonts/tahoma.ttf
+old mode 100644
+new mode 100755
+index 8bee8ad..b5e50a8
+Binary files a/fonts/tahoma.ttf and b/fonts/tahoma.ttf differ
+diff --git a/fonts/tahomabd.ttf b/fonts/tahomabd.ttf
+old mode 100644
+new mode 100755
+index c01f9e1..96e449f
+Binary files a/fonts/tahomabd.ttf and b/fonts/tahomabd.ttf differ
+diff --git a/fonts/wingding.ttf b/fonts/wingding.ttf
+old mode 100644
+new mode 100755
+index c8ab8e1..e8c4b95
+Binary files a/fonts/wingding.ttf and b/fonts/wingding.ttf differ

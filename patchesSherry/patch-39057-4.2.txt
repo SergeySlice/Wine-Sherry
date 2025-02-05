@@ -353,7 +353,7 @@ index d9d6cf2676..b896cd5fd3 100644
 +        return hr;
 +
 +    adapter->vertex_pipe->vp_get_caps(&adapter->gl_info, &vertex_caps);
-+    if (device->create_parms.flags & WINED3DCREATE_SOFTWARE_VERTEXPROCESSING)
++    
 +        caps->MaxVertexShaderConst = adapter->d3d_info.limits.vs_uniform_count_swvp;
 +    return hr;
  }
@@ -1381,7 +1381,7 @@ index 03b6a94778..53affca93c 100644
 +++ b/dlls/wined3d/device.c
 @@ -3622,6 +3622,11 @@ HRESULT CDECL wined3d_device_get_device_caps(const struct wined3d_device *device
      adapter->vertex_pipe->vp_get_caps(&adapter->gl_info, &vertex_caps);
-     if (device->create_parms.flags & WINED3DCREATE_SOFTWARE_VERTEXPROCESSING)
+     
          caps->MaxVertexShaderConst = adapter->d3d_info.limits.vs_uniform_count_swvp;
 +    caps->MaxVertexBlendMatrixIndex = vertex_caps.max_vertex_blend_matrix_index;
 +    if (!((device->create_parms.flags & WINED3DCREATE_SOFTWARE_VERTEXPROCESSING)

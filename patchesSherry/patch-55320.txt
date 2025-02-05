@@ -1,0 +1,13 @@
+diff --git a/include/wine/wined3d.h b/include/wine/wined3d.h
+index c9790efccbb..a57ca86a707 100644
+--- a/include/wine/wined3d.h
++++ b/include/wine/wined3d.h
+@@ -1589,7 +1589,7 @@ enum wined3d_memory_segment_group
+ #define WINED3D_REGISTER_WINDOW_NO_ALT_ENTER                    0x00000002u
+ #define WINED3D_REGISTER_WINDOW_NO_PRINT_SCREEN                 0x00000004u
+ 
+-#define WINED3D_MAX_STREAMS                                     16
++#define WINED3D_MAX_STREAMS                                     32
+ #define WINED3D_MAX_TEXTURES                                    8
+ #define WINED3D_MAX_FRAGMENT_SAMPLERS                           16
+ #define WINED3D_MAX_VERTEX_SAMPLERS                             4
