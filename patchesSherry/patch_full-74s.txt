@@ -1,4 +1,4 @@
-diff --git a/LICENSE b/LICENSE
+fdiff --git a/LICENSE b/LICENSE
 index 6dbf8c0..3f4841a 100644
 --- a/LICENSE
 +++ b/LICENSE
