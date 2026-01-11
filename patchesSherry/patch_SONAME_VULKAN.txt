@@ -1,0 +1,70 @@
+diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
+index 9030017eb82..e94a18adb91 100644
+--- a/dlls/win32u/vulkan.c
++++ b/dlls/win32u/vulkan.c
+@@ -2993,7 +2993,10 @@ static void vulkan_init_once(void)
+     VkExtensionProperties *properties = NULL;
+     uint32_t count = 0;
+     VkResult res;
+-
++#ifdef SONAME_LIBVULKAN
++#undef SONAME_LIBVULKAN
++#endif
++#define SONAME_LIBVULKAN "libMoltenVK.dylib"
+ #ifdef SONAME_LIBVULKAN
+     vulkan_handle = dlopen( SONAME_LIBVULKAN, RTLD_NOW );
+     if (!vulkan_handle) ERR( "Failed to load %s\n", SONAME_LIBVULKAN );
+diff --git a/dlls/wined3d/stateblock.c b/dlls/wined3d/stateblock.c
+index def9182d9b3..949f6526656 100644
+--- a/dlls/wined3d/stateblock.c
++++ b/dlls/wined3d/stateblock.c
+@@ -2436,7 +2436,8 @@ static bool wined3d_select_feature_level(const struct wined3d_adapter *adapter,
+ 
+     FIXME_(winediag)("None of the requested D3D feature levels is supported on this GPU "
+             "with the current shader backend.\n");
+-    return false;
++    *selected_level = (i>0?levels[--i]:levels[0]);
++    return true;
+ }
+ 
+ HRESULT CDECL wined3d_state_create(struct wined3d_device *device,
+diff --git a/dlls/winex11.drv/xrandr.c b/dlls/winex11.drv/xrandr.c
+index b147b952cab..720b77a228c 100644
+--- a/dlls/winex11.drv/xrandr.c
++++ b/dlls/winex11.drv/xrandr.c
+@@ -139,6 +139,10 @@ sym_not_found:
+     }
+     return r;
+ }
++#ifdef SONAME_LIBVULKAN
++#undef SONAME_LIBVULKAN
++#endif
++#define SONAME_LIBVULKAN "vulkan-1.dll"
+ 
+ #ifdef SONAME_LIBVULKAN
+ 
+diff --git a/fonts/marlett.ttf b/fonts/marlett.ttf
+old mode 100644
+new mode 100755
+index b3122c56cee..0db6b02c077
+Binary files a/fonts/marlett.ttf and b/fonts/marlett.ttf differ
+diff --git a/fonts/symbol.ttf b/fonts/symbol.ttf
+old mode 100644
+new mode 100755
+index 1fd5b4e446c..fd1c0337496
+Binary files a/fonts/symbol.ttf and b/fonts/symbol.ttf differ
+diff --git a/fonts/tahoma.ttf b/fonts/tahoma.ttf
+old mode 100644
+new mode 100755
+index 8bee8ad35c8..b5e50a830ae
+Binary files a/fonts/tahoma.ttf and b/fonts/tahoma.ttf differ
+diff --git a/fonts/tahomabd.ttf b/fonts/tahomabd.ttf
+old mode 100644
+new mode 100755
+index 66287eb485d..96e449f5444
+Binary files a/fonts/tahomabd.ttf and b/fonts/tahomabd.ttf differ
+diff --git a/fonts/wingding.ttf b/fonts/wingding.ttf
+old mode 100644
+new mode 100755
+index c8ab8e1a8c5..e8c4b9506f7
+Binary files a/fonts/wingding.ttf and b/fonts/wingding.ttf differ
