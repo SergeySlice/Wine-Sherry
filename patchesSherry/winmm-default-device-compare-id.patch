@@ -1,0 +1,49 @@
+From: Magnus Aspling
+Subject: [PATCH] winmm: Compare ID of devices instead of pointer to populate default device during enumeration
+
+I observed that the pointer may be different between IMMDeviceEnumerator_GetDefaultAudioEndpoint() 
+and WINMM_InitMMDevice() for the same underlying device. The patch aims to compare the ID of the
+IMMDevice instead of pointers to avoid situations where the defautl device end up as a null pointer.
+
+---
+diff --git a/dlls/winmm/waveform.c b/dlls/winmm/waveform.c
+index fa1c446ff91..e27e6d9976d 100644
+--- a/dlls/winmm/waveform.c
++++ b/dlls/winmm/waveform.c
+@@ -576,6 +576,7 @@ static HRESULT WINMM_EnumDevices(WINMM_MMDevice **devices,
+     if(*devcount > 0){
+         UINT n, count = 1;
+         IMMDevice *def_dev = NULL;
++        WCHAR *def_dev_id = NULL;
+ 
+         *devices = calloc(*devcount, sizeof(WINMM_MMDevice));
+         if(!*devices){
+@@ -593,15 +594,27 @@ static HRESULT WINMM_EnumDevices(WINMM_MMDevice **devices,
+         /* make sure that device 0 is the default device */
+         IMMDeviceEnumerator_GetDefaultAudioEndpoint(devenum,
+                 flow, eConsole, &def_dev);
++        if(def_dev)
++            IMMDevice_GetId(def_dev, &def_dev_id);
+ 
+         for(n = 0; n < *devcount; ++n){
+             IMMDevice *device;
+ 
+             hr = IMMDeviceCollection_Item(devcoll, n, &device);
+             if(SUCCEEDED(hr)){
++                WCHAR *dev_id = NULL;
++                BOOL is_default = FALSE;
++
+                 WINMM_InitMMDevice(flow, device, &(*devices)[n], n);
++
++                if(def_dev_id){
++                    IMMDevice_GetId(device, &dev_id);
++                    if(dev_id && !lstrcmpW(dev_id, def_dev_id))
++                        is_default = TRUE;
++                    CoTaskMemFree(dev_id);
++                }
+ 
+-                if(device == def_dev)
++                if(is_default)
+                     (*map)[0] = &(*devices)[n];
+                 else{
+                     (*map)[count] = &(*devices)[n];

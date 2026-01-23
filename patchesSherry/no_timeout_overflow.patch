@@ -1,0 +1,19 @@
+diff --git a/server/fd.c b/server/fd.c
+index f70bec354a3..a7e829f5ffe 100644
+--- a/server/fd.c
++++ b/server/fd.c
+@@ -431,6 +431,13 @@ struct timeout_user *add_timeout_user( timeout_t when, timeout_callback func, vo
+     struct timeout_user *user;
+     struct list *ptr;
+ 
++    if (when < MINLONGLONG + monotonic_time)
++    {
++        /* The timeout_to_abstime call below would overflow. 'when' is a relative timeout close to
++         * the maximum value of around 30k years, so just don't bother setting any timeout. */
++        return NULL;
++    }
++
+     if (!(user = mem_alloc( sizeof(*user) ))) return NULL;
+     user->when     = timeout_to_abstime( when );
+     user->callback = func;
+	 

@@ -1,0 +1,13 @@
+diff --git a/dlls/msxml3/main.c b/dlls/msxml3/main.c
+index 16e0b38b185..733a707cd31 100644
+--- a/dlls/msxml3/main.c
++++ b/dlls/msxml3/main.c
+@@ -322,6 +322,7 @@ static void init_char_encoders(void)
+     } encoder[] =
+     {
+         { "gbk",          gbk_to_utf8,       utf8_to_gbk       },
++        { "gb2312",       gbk_to_utf8,       utf8_to_gbk       },
+         { "iso8859-1",    iso8859_1_to_utf8, utf8_to_iso8859_1 },
+         { "windows-1250", win1250_to_utf8,   utf8_to_win1250   },
+         { "windows-1251", win1251_to_utf8,   utf8_to_win1251   },
+		 
