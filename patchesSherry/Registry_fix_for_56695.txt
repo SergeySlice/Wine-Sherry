@@ -1,0 +1,9 @@
+ Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\VisualStudio\14.0\VC\Runtimes\X64]
+"Bld"=dword:00006ddf
+"Installed"=dword:00000001
+"Major"=dword:0000000e
+"Minor"=dword:00000018
+"Rbld"=dword:00000004
+"Version"="v14.24.28127.04"
