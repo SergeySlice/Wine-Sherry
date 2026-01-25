@@ -1,0 +1,652 @@
+Binary files /Users/sergey/src/wine-11.1/dlls/.DS_Store and /Users/sergey/src/wine-11/dlls/.DS_Store differ
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/comctl32/toolbar.c /Users/sergey/src/wine-11/dlls/comctl32/toolbar.c
+--- /Users/sergey/src/wine-11.1/dlls/comctl32/toolbar.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/comctl32/toolbar.c	2026-01-24 19:50:48
+@@ -6428,7 +6428,7 @@ TOOLBAR_Notify (TOOLBAR_INFO *infoPtr, LPNMHDR lpnmh)
+ 
+     default:
+         WARN("Should WM_NOTIFY NMHDR code 0x%x be forwarded?\n", lpnmh->code);
+-        return 0;
++        return SendMessageW(infoPtr->hwndNotify, WM_NOTIFY, lpnmh->idFrom, (LPARAM)lpnmh);
+     }
+ }
+ 
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/d3d11/async.c /Users/sergey/src/wine-11/dlls/d3d11/async.c
+--- /Users/sergey/src/wine-11.1/dlls/d3d11/async.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/d3d11/async.c	2026-01-24 19:50:48
+@@ -317,6 +317,12 @@ static HRESULT STDMETHODCALLTYPE d3d10_query_GetData(I
+     if (!data && data_size)
+         return E_INVALIDARG;
+ 
++    if (query->desc.Query == D3D11_QUERY_SO_OVERFLOW_PREDICATE) {
++      char *tmp = (char*)data;
++      *tmp = 0;
++      return S_OK;
++    }
++
+     if (query->desc.Query == D3D11_QUERY_PIPELINE_STATISTICS
+             && data_size == sizeof(D3D10_QUERY_DATA_PIPELINE_STATISTICS))
+     {
+@@ -352,7 +358,9 @@ static UINT STDMETHODCALLTYPE d3d10_query_GetDataSize(
+     struct d3d_query *query = impl_from_ID3D10Query(iface);
+     unsigned int data_size;
+ 
+-    TRACE("iface %p.\n", iface);
++//    TRACE("iface %p.\n", iface);
++    if (query->desc.Query == D3D11_QUERY_SO_OVERFLOW_PREDICATE)
++      return 1;
+ 
+     wined3d_mutex_lock();
+     data_size = wined3d_query_get_data_size(query->wined3d_query);
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/d3d11/device.c /Users/sergey/src/wine-11/dlls/d3d11/device.c
+--- /Users/sergey/src/wine-11.1/dlls/d3d11/device.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/d3d11/device.c	2026-01-24 19:50:48
+@@ -774,6 +774,8 @@ static void STDMETHODCALLTYPE d3d11_device_context_Dra
+ {
+     struct d3d11_device_context *context = impl_from_ID3D11DeviceContext4(iface);
+ 
++    if (index_count == 0)
++         return;
+     TRACE("iface %p, index_count %u, start_index_location %u, base_vertex_location %d.\n",
+             iface, index_count, start_index_location, base_vertex_location);
+ 
+@@ -994,7 +996,10 @@ static void STDMETHODCALLTYPE d3d11_device_context_Beg
+ {
+     struct d3d11_device_context *context = impl_from_ID3D11DeviceContext4(iface);
+     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
+-
++    if (!query) {
++        ERR("no query\n");
++        return;
++    }
+     TRACE("iface %p, asynchronous %p.\n", iface, asynchronous);
+ 
+     wined3d_device_context_issue_query(context->wined3d_context, query->wined3d_query, WINED3DISSUE_BEGIN);
+@@ -1005,7 +1010,10 @@ static void STDMETHODCALLTYPE d3d11_device_context_End
+ {
+     struct d3d11_device_context *context = impl_from_ID3D11DeviceContext4(iface);
+     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
+-
++    if (!query) {
++        ERR("no query\n");
++        return;
++    }
+     TRACE("iface %p, asynchronous %p.\n", iface, asynchronous);
+ 
+     wined3d_device_context_issue_query(context->wined3d_context, query->wined3d_query, WINED3DISSUE_END);
+@@ -1018,7 +1026,10 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_context_
+     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
+     unsigned int wined3d_flags;
+     HRESULT hr;
+-
++    if (!query) {
++        ERR("no query\n");
++        return E_INVALIDARG;
++    }
+     TRACE("iface %p, asynchronous %p, data %p, data_size %u, data_flags %#x.\n",
+             iface, asynchronous, data, data_size, data_flags);
+ 
+@@ -1056,7 +1067,10 @@ static void STDMETHODCALLTYPE d3d11_device_context_Set
+     TRACE("iface %p, predicate %p, value %#x.\n", iface, predicate, value);
+ 
+     query = unsafe_impl_from_ID3D11Query((ID3D11Query *)predicate);
+-
++    if (!query) {
++        ERR("no query\n");
++        return;
++    }
+     wined3d_device_context_set_predication(context->wined3d_context, query ? query->wined3d_query : NULL, value);
+ }
+ 
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/ddraw/device.c /Users/sergey/src/wine-11/dlls/ddraw/device.c
+--- /Users/sergey/src/wine-11.1/dlls/ddraw/device.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/ddraw/device.c	2026-01-24 19:50:48
+@@ -1020,6 +1020,9 @@ static HRESULT WINAPI d3d_device1_NextViewport(IDirect
+  *  D3D_OK because it's a stub
+  *
+  *****************************************************************************/
++//Slice - bug 10729
++static D3DPICKRECORD FakeRecord = { 0x2, 0, 0x1, 0};
++
+ static HRESULT WINAPI d3d_device1_Pick(IDirect3DDevice *iface, IDirect3DExecuteBuffer *buffer,
+         IDirect3DViewport *viewport, DWORD flags, D3DRECT *rect)
+ {
+@@ -1049,7 +1052,11 @@ static HRESULT WINAPI d3d_device1_GetPickRecords(IDire
+         DWORD *count, D3DPICKRECORD *records)
+ {
+     FIXME("iface %p, count %p, records %p stub!\n", iface, count, records);
+-
++    *count = 1;
++    if (!records) {
++        return DDERR_INVALIDPARAMS;
++    }
++    *records = FakeRecord;
+     return D3D_OK;
+ }
+ 
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/ddraw/viewport.c /Users/sergey/src/wine-11/dlls/ddraw/viewport.c
+--- /Users/sergey/src/wine-11.1/dlls/ddraw/viewport.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/ddraw/viewport.c	2026-01-24 19:50:48
+@@ -741,13 +741,21 @@ static HRESULT WINAPI d3d_viewport_Clear(IDirect3DView
+     HRESULT hr;
+     IDirect3DViewport3 *current_viewport;
+     IDirect3DDevice3 *d3d_device3;
++    D3DRECT full_rect;
+ 
+     TRACE("iface %p, rect_count %lu, rects %p, flags %#lx.\n", iface, rect_count, rects, flags);
+ 
+     if (!rects || !rect_count)
+     {
+         WARN("rect_count = %lu, rects = %p, ignoring clear\n", rect_count, rects);
+-        return D3D_OK;
++        //Slice: 43159
++        full_rect.x1 = 0;
++        full_rect.y1 = 0;
++        full_rect.x2 = This->viewports.vp1.dwWidth;
++        full_rect.y2 = This->viewports.vp1.dwHeight;
++        rect_count = 1;
++        rects = &full_rect;
++        //return D3D_OK;
+     }
+ 
+     if (This->active_device == NULL) {
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/kernelbase/registry.c /Users/sergey/src/wine-11/dlls/kernelbase/registry.c
+--- /Users/sergey/src/wine-11.1/dlls/kernelbase/registry.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/kernelbase/registry.c	2026-01-24 19:50:48
+@@ -1913,9 +1913,9 @@ LSTATUS WINAPI RegGetValueW( HKEY hKey, LPCWSTR pszSub
+     if (pvData && !pcbData)
+         return ERROR_INVALID_PARAMETER;
+ 
+-    if ((dwFlags & RRF_RT_REG_EXPAND_SZ) && !(dwFlags & RRF_NOEXPAND) &&
+-            ((dwFlags & RRF_RT_ANY) != RRF_RT_ANY))
+-        return ERROR_INVALID_PARAMETER;
++//    if ((dwFlags & RRF_RT_REG_EXPAND_SZ) && !(dwFlags & RRF_NOEXPAND) &&
++//            ((dwFlags & RRF_RT_ANY) != RRF_RT_ANY))
++//        return ERROR_INVALID_PARAMETER;
+ 
+     if ((dwFlags & RRF_WOW64_MASK) == RRF_WOW64_MASK)
+         return ERROR_INVALID_PARAMETER;
+@@ -1932,6 +1932,10 @@ LSTATUS WINAPI RegGetValueW( HKEY hKey, LPCWSTR pszSub
+     }
+ 
+     ret = RegQueryValueExW(hKey, pszValue, NULL, &dwType, pvData, &cbData);
++    if ((dwFlags & RRF_RT_REG_EXPAND_SZ) && !(dwFlags & RRF_NOEXPAND) &&
++            ((dwFlags & RRF_RT_ANY) != RRF_RT_ANY) && (dwFlags & dwType))
++        return ERROR_INVALID_PARAMETER;
++
+ 
+     /* If the value is a string, we need to read in the whole value to be able
+      * to know exactly how many bytes are needed after expanding the string and
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/mshtml/nsembed.c /Users/sergey/src/wine-11/dlls/mshtml/nsembed.c
+--- /Users/sergey/src/wine-11.1/dlls/mshtml/nsembed.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/mshtml/nsembed.c	2026-01-24 19:50:48
+@@ -606,6 +606,8 @@ static BOOL load_xul(WCHAR *gecko_path)
+ static BOOL load_xul(WCHAR *gecko_path)
+ {
+     size_t len;
++//    BOOL ret;
++//    char *current_locale = setlocale(LC_ALL, NULL);
+ 
+     set_environment(gecko_path);
+ 
+@@ -650,6 +652,9 @@ static BOOL load_xul(WCHAR *gecko_path)
+ #undef NS_DLSYM
+ 
+     return init_xpcom(gecko_path);
++//    ret = init_xpcom(gecko_path);
++//    setlocale(LC_ALL, current_locale);
++//    return ret;
+ }
+ 
+ static WCHAR *check_version(const WCHAR *path)
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/msxml3/main.c /Users/sergey/src/wine-11/dlls/msxml3/main.c
+--- /Users/sergey/src/wine-11.1/dlls/msxml3/main.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/msxml3/main.c	2026-01-24 19:50:48
+@@ -322,6 +322,7 @@ static void init_char_encoders(void)
+     } encoder[] =
+     {
+         { "gbk",          gbk_to_utf8,       utf8_to_gbk       },
++		{ "gb2312",       gbk_to_utf8,       utf8_to_gbk       },
+         { "iso8859-1",    iso8859_1_to_utf8, utf8_to_iso8859_1 },
+         { "windows-1250", win1250_to_utf8,   utf8_to_win1250   },
+         { "windows-1251", win1251_to_utf8,   utf8_to_win1251   },
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/ntdll/rtl.c /Users/sergey/src/wine-11/dlls/ntdll/rtl.c
+--- /Users/sergey/src/wine-11.1/dlls/ntdll/rtl.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/ntdll/rtl.c	2026-01-24 19:50:48
+@@ -1401,6 +1401,7 @@ void WINAPI RtlGetCurrentProcessorNumberEx(PROCESSOR_N
+     processor->Group = 0;
+     processor->Number = NtGetCurrentProcessorNumber();
+     processor->Reserved = 0;
++
+ }
+ 
+ static RTL_BALANCED_NODE *rtl_node_parent( RTL_BALANCED_NODE *node )
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/opengl32/unix_private.h /Users/sergey/src/wine-11/dlls/opengl32/unix_private.h
+--- /Users/sergey/src/wine-11.1/dlls/opengl32/unix_private.h	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/opengl32/unix_private.h	2026-01-24 19:50:48
+@@ -46,6 +46,11 @@ extern struct opengl_funcs null_opengl_funcs;
+ 
+ extern struct opengl_funcs null_opengl_funcs;
+ 
++#ifdef WINE_OPENGL_DRIVER_VERSION
++#undef WINE_OPENGL_DRIVER_VERSION
++#endif
++#define WINE_OPENGL_DRIVER_VERSION 32
++
+ static inline const struct opengl_funcs *get_dc_funcs( HDC hdc )
+ {
+     DWORD has_opengl;
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/shlwapi/ordinal.c /Users/sergey/src/wine-11/dlls/shlwapi/ordinal.c
+--- /Users/sergey/src/wine-11.1/dlls/shlwapi/ordinal.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/shlwapi/ordinal.c	2026-01-24 19:50:48
+@@ -4,6 +4,7 @@
+  * Copyright 1997 Marcus Meissner
+  *           1998 Jürgen Schmied
+  *           2001-2003 Jon Griffiths
++ *           2020 Katayama Hirofumi MZ
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -189,36 +190,63 @@ HANDLE WINAPI SHAllocShared(LPCVOID lpvData, DWORD dwS
+ }
+ 
+ /*************************************************************************
+- * @ [SHLWAPI.8]
++ * @ [SHLWAPI.510]
+  *
+- * Get a pointer to a block of shared memory from a shared memory handle.
++ * Get a pointer to a block of shared memory from a shared memory handle,
++ * with specified access rights.
+  *
+  * PARAMS
+  * hShared  [I] Shared memory handle
+  * dwProcId [I] ID of process owning hShared
++ * bWriteAccess [I] TRUE to get a writable block,
++ * 					FALSE to get a read-only block
+  *
+  * RETURNS
+  * Success: A pointer to the shared memory
+  * Failure: NULL
+- *
++
+  */
+-PVOID WINAPI SHLockShared(HANDLE hShared, DWORD dwProcId)
++LPVOID WINAPI //SHLockShared(HANDLE hShared, DWORD dwProcId)
++SHLockSharedEx(HANDLE hShared, DWORD dwProcId, BOOL bWriteAccess)
+ {
+   HANDLE hDup;
+   LPVOID pMapped;
++  DWORD dwAccess;
+ 
+-  TRACE("(%p %ld)\n", hShared, dwProcId);
++  TRACE("(%p %d %d)\n", hShared, dwProcId, bWriteAccess);
+ 
+   /* Get handle to shared memory for current process */
+   hDup = SHMapHandle(hShared, dwProcId, GetCurrentProcessId(), FILE_MAP_ALL_ACCESS, 0);
++  if (hDup == NULL)
++     return NULL;
+ 
+   /* Get View */
+-  pMapped = MapViewOfFile(hDup, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
++  dwAccess = (FILE_MAP_READ | (bWriteAccess ? FILE_MAP_WRITE : 0));
++  pMapped = MapViewOfFile(hDup, dwAccess, 0, 0, 0);
+   CloseHandle(hDup);
+ 
+   if (pMapped)
+     return (char *) pMapped + sizeof(DWORD); /* Hide size */
+   return NULL;
++}
++
++/*************************************************************************
++ * @ [SHLWAPI.8]
++ *
++ * Get a pointer to a block of shared memory from a shared memory handle.
++ *
++ * PARAMS
++ * hShared  [I] Shared memory handle
++ * dwProcId [I] ID of process owning hShared
++ *
++ * RETURNS
++ * Success: A pointer to the shared memory
++ * Failure: NULL
++ *
++ */
++PVOID WINAPI SHLockShared(HANDLE hShared, DWORD dwProcId)
++{
++  return SHLockSharedEx(hShared, dwProcId, TRUE);
+ }
+ 
+ /*************************************************************************
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/shlwapi/shlwapi.spec /Users/sergey/src/wine-11/dlls/shlwapi/shlwapi.spec
+--- /Users/sergey/src/wine-11.1/dlls/shlwapi/shlwapi.spec	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/shlwapi/shlwapi.spec	2026-01-24 19:50:48
+@@ -5,9 +5,9 @@
+ 5   stdcall -noname PathFindOnPathExA(str ptr long)
+ 6   stdcall -noname PathFindOnPathExW(wstr ptr long)
+ 7   stdcall -ordinal SHAllocShared(ptr long long)
+-8   stdcall -ordinal SHLockShared(long long)
++8   stdcall -ordinal SHLockShared(ptr long)
+ 9   stdcall -ordinal SHUnlockShared(ptr)
+-10  stdcall -ordinal SHFreeShared(long long)
++10  stdcall -ordinal SHFreeShared(ptr long)
+ 11  stdcall -noname SHMapHandle(long long long long long)
+ 12  stdcall -ordinal SHCreateMemStream(ptr long) shcore.SHCreateMemStream
+ 13  stdcall -noname RegisterDefaultAcceptHeaders(ptr ptr)
+@@ -503,7 +503,7 @@
+ 507 stub -noname SHPropertyBag_ReadDWORD
+ 508 stub -noname SHPropertyBag_WriteDWORD
+ 509 stdcall -noname IUnknown_OnFocusChangeIS(ptr ptr long)
+-510 stub -noname SHLockSharedEx
++510 stdcall -noname SHLockSharedEx(ptr long long)
+ 511 stub -noname PathFileExistsDefExtAndAttributesW
+ 512 stub -ordinal IStream_ReadPidl
+ 513 stub -ordinal IStream_WritePidl
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/win32u/opengl.c /Users/sergey/src/wine-11/dlls/win32u/opengl.c
+--- /Users/sergey/src/wine-11.1/dlls/win32u/opengl.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/win32u/opengl.c	2026-01-24 19:54:40
+@@ -174,7 +174,11 @@ static BOOL opengl_drawable_swap( struct opengl_drawab
+ }
+ 
+ #ifdef SONAME_LIBEGL
++#undef SONAME_LIBEGL
++#endif
+ 
++#ifdef SONAME_LIBEGL
++
+ struct framebuffer_surface
+ {
+     struct opengl_drawable base;
+@@ -2614,6 +2618,11 @@ void win32u_glImportSemaphoreWin32NameEXT( GLuint sema
+         NtClose( handle );
+     }
+ }
++
++#ifdef WINE_OPENGL_DRIVER_VERSION
++#undef WINE_OPENGL_DRIVER_VERSION
++#endif
++#define WINE_OPENGL_DRIVER_VERSION 32
+ 
+ static void display_funcs_init(void)
+ {
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/win32u/vulkan.c /Users/sergey/src/wine-11/dlls/win32u/vulkan.c
+--- /Users/sergey/src/wine-11.1/dlls/win32u/vulkan.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/win32u/vulkan.c	2026-01-24 19:50:48
+@@ -33,6 +33,12 @@
+ #include "win32u_private.h"
+ #include "ntuser_private.h"
+ 
++#ifdef SONAME_LIBVULKAN
++#undef SONAME_LIBVULKAN
++#endif
++#define SONAME_LIBVULKAN "libMoltenVK.dylib"
++//#define SONAME_LIBVULKAN "libvulkan.dylib"
++
+ WINE_DEFAULT_DEBUG_CHANNEL(vulkan);
+ 
+ static PFN_vkGetDeviceProcAddr p_vkGetDeviceProcAddr;
+@@ -3036,7 +3042,7 @@ static void vulkan_init_once(void)
+     ERR( "Wine was built without Vulkan support.\n" );
+ #endif
+     if (!vulkan_handle) return;
+-
++//    TRACE( "SI 1:\n" );
+ #define LOAD_FUNCPTR( f )                                                                          \
+     if (!(p_##f = dlsym( vulkan_handle, #f )))                                                     \
+     {                                                                                              \
+@@ -3045,7 +3051,7 @@ static void vulkan_init_once(void)
+         vulkan_handle = NULL;                                                                      \
+         return;                                                                                    \
+     }
+-
++//    TRACE( "SI 2:\n" );
+     LOAD_FUNCPTR( vkGetDeviceProcAddr );
+     LOAD_FUNCPTR( vkGetInstanceProcAddr );
+ #undef LOAD_FUNCPTR
+@@ -3058,7 +3064,7 @@ static void vulkan_init_once(void)
+     LOAD_FUNCPTR( vkCreateInstance );
+     LOAD_FUNCPTR( vkEnumerateInstanceExtensionProperties );
+ #undef LOAD_FUNCPTR
+-
++ //   TRACE( "SI 3:\n" );
+     do
+     {
+         free( properties );
+@@ -3066,6 +3072,7 @@ static void vulkan_init_once(void)
+         if ((res = p_vkEnumerateInstanceExtensionProperties( NULL, &count, NULL ))) goto failed;
+         if (!count || !(properties = malloc( count * sizeof(*properties) ))) goto failed;
+     } while ((res = p_vkEnumerateInstanceExtensionProperties( NULL, &count, properties ) == VK_INCOMPLETE));
++//    TRACE( "SI 4:\n" );
+     if (res) goto failed;
+ 
+     TRACE( "Host instance extensions:\n" );
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/wined3d/adapter_gl.c /Users/sergey/src/wine-11/dlls/wined3d/adapter_gl.c
+--- /Users/sergey/src/wine-11.1/dlls/wined3d/adapter_gl.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/wined3d/adapter_gl.c	2026-01-24 19:50:48
+@@ -1242,8 +1242,9 @@ static enum wined3d_feature_level feature_level_from_c
+ static enum wined3d_feature_level feature_level_from_caps(const struct wined3d_gl_info *gl_info,
+         const struct shader_caps *shader_caps, const struct fragment_caps *fragment_caps)
+ {
+-    unsigned int shader_model;
+-
++//    unsigned int shader_model;
++    return WINED3D_FEATURE_LEVEL_11_1;
++/*
+     shader_model = min(shader_caps->vs_version, shader_caps->ps_version);
+     shader_model = min(shader_model, max(shader_caps->gs_version, 3));
+     shader_model = min(shader_model, max(shader_caps->hs_version, 4));
+@@ -1288,6 +1289,7 @@ static enum wined3d_feature_level feature_level_from_c
+         return WINED3D_FEATURE_LEVEL_6;
+ 
+     return WINED3D_FEATURE_LEVEL_5;
++    */
+ }
+ 
+ static const struct wined3d_renderer_table
+@@ -3513,6 +3515,11 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3
+         /* GL_ARB_map_buffer_range and GL_APPLE_flush_buffer_range provide the same
+          * functionality. Prefer the ARB extension */
+         gl_info->supported[APPLE_FLUSH_BUFFER_RANGE] = FALSE;
++    } else if (gl_info->supported[APPLE_FLUSH_BUFFER_RANGE])
++    {
++    	    /* Slice I want to reverse logic */
++    	gl_info->supported[ARB_MAP_BUFFER_RANGE] = TRUE;
++
+     }
+     if (gl_info->supported[ARB_TEXTURE_CUBE_MAP])
+     {
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/wined3d/context_gl.c /Users/sergey/src/wine-11/dlls/wined3d/context_gl.c
+--- /Users/sergey/src/wine-11.1/dlls/wined3d/context_gl.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/wined3d/context_gl.c	2026-01-24 19:54:35
+@@ -1295,8 +1295,11 @@ static void wined3d_context_gl_update_window(struct wi
+     if (!context_gl->c.swapchain)
+         return;
+ 
+-    if (context_gl->window == context_gl->c.swapchain->win_handle &&
+-        context_gl->dc == context_gl->c.swapchain->dc)
++//    if (context_gl->window == context_gl->c.swapchain->win_handle &&
++//        context_gl->dc == context_gl->c.swapchain->dc)
++//        return;
++
++      if (context_gl->window == context_gl->c.swapchain->win_handle)
+             return;
+ 
+     TRACE("Updating context %p window from %p to %p.\n",
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/wined3d/query.c /Users/sergey/src/wine-11/dlls/wined3d/query.c
+--- /Users/sergey/src/wine-11.1/dlls/wined3d/query.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/wined3d/query.c	2026-01-24 19:50:48
+@@ -216,7 +216,7 @@ enum wined3d_fence_result wined3d_fence_test(const str
+                 break;
+ 
+             case GL_TIMEOUT_EXPIRED:
+-                ret = WINED3D_FENCE_WAITING;
++            	ret = WINED3D_FENCE_NOT_STARTED; //WINED3D_FENCE_WAITING;
+                 break;
+ 
+             case GL_WAIT_FAILED:
+@@ -570,6 +570,7 @@ void * CDECL wined3d_query_get_parent(const struct win
+ void * CDECL wined3d_query_get_parent(const struct wined3d_query *query)
+ {
+     TRACE("query %p.\n", query);
++    if (!query) return NULL;
+ 
+     return query->parent;
+ }
+@@ -577,6 +578,7 @@ enum wined3d_query_type CDECL wined3d_query_get_type(c
+ enum wined3d_query_type CDECL wined3d_query_get_type(const struct wined3d_query *query)
+ {
+     TRACE("query %p.\n", query);
++    if (!query) return 0;
+ 
+     return query->type;
+ }
+@@ -584,6 +586,7 @@ static BOOL wined3d_event_query_ops_issue(struct wined
+ static BOOL wined3d_event_query_ops_issue(struct wined3d_query *query, uint32_t flags)
+ {
+     TRACE("query %p, flags %#x.\n", query, flags);
++    if (!query) return false;
+ 
+     if (flags & WINED3DISSUE_END)
+     {
+@@ -1231,7 +1234,8 @@ static HRESULT wined3d_so_statistics_query_create(stru
+ 
+     if (WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0 <= type && type <= WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM3)
+         stream_idx = type - WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0;
+-    else if (type == WINED3D_QUERY_TYPE_SO_STATISTICS)
++    else if ((type == WINED3D_QUERY_TYPE_SO_STATISTICS) ||
++             (type == WINED3D_QUERY_TYPE_SO_OVERFLOW))
+         stream_idx = 0;
+     else
+         return WINED3DERR_NOTAVAILABLE;
+@@ -1326,7 +1330,7 @@ HRESULT wined3d_query_gl_create(struct wined3d_device 
+         case WINED3D_QUERY_TYPE_TIMESTAMP_DISJOINT:
+         case WINED3D_QUERY_TYPE_TIMESTAMP_FREQ:
+             return wined3d_timestamp_disjoint_query_create(device, type, parent, parent_ops, query);
+-
++        case WINED3D_QUERY_TYPE_SO_OVERFLOW:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM1:
+@@ -1937,7 +1941,7 @@ HRESULT wined3d_query_vk_create(struct wined3d_device 
+         case WINED3D_QUERY_TYPE_PIPELINE_STATISTICS:
+             data_size = sizeof(struct wined3d_query_data_pipeline_statistics);
+             break;
+-
++        case WINED3D_QUERY_TYPE_SO_OVERFLOW: //will use statistics
+         case WINED3D_QUERY_TYPE_SO_STATISTICS:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM0:
+         case WINED3D_QUERY_TYPE_SO_STATISTICS_STREAM1:
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/wined3d/stateblock.c /Users/sergey/src/wine-11/dlls/wined3d/stateblock.c
+--- /Users/sergey/src/wine-11.1/dlls/wined3d/stateblock.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/wined3d/stateblock.c	2026-01-24 19:50:48
+@@ -2435,8 +2435,9 @@ static bool wined3d_select_feature_level(const struct 
+     }
+ 
+     FIXME_(winediag)("None of the requested D3D feature levels is supported on this GPU "
+-            "with the current shader backend.\n");
+-    return false;
++            "with the current shader backend. - hacked\n");
++    *selected_level = (i>0?levels[--i]:levels[0]);
++    return true;
+ }
+ 
+ HRESULT CDECL wined3d_state_create(struct wined3d_device *device,
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/winemac.drv/window.c /Users/sergey/src/wine-11/dlls/winemac.drv/window.c
+--- /Users/sergey/src/wine-11.1/dlls/winemac.drv/window.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/winemac.drv/window.c	2026-01-24 19:50:48
+@@ -529,6 +529,7 @@ static struct macdrv_win_data *macdrv_create_win_data(
+ {
+     struct macdrv_win_data *data;
+     HWND parent;
++    DWORD ex_style;
+ 
+     if (NtUserGetWindowThread(hwnd, NULL) != GetCurrentThreadId()) return NULL;
+ 
+@@ -1591,6 +1592,7 @@ void macdrv_WindowPosChanged(HWND hwnd, HWND insert_af
+     struct macdrv_win_data *data;
+     unsigned int new_style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
+     struct window_rects old_rects;
++    DWORD ex_style;
+ 
+     if (!(data = get_win_data(hwnd))) return;
+ 
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/winevulkan/vulkan.c /Users/sergey/src/wine-11/dlls/winevulkan/vulkan.c
+--- /Users/sergey/src/wine-11.1/dlls/winevulkan/vulkan.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/winevulkan/vulkan.c	2026-01-24 19:50:48
+@@ -30,6 +30,10 @@
+ #include "ntgdi.h"
+ #include "ntuser.h"
+ 
++#ifndef WINE_VULKAN_DRIVER_VERSION
++#define WINE_VULKAN_DRIVER_VERSION 35
++#endif
++
+ WINE_DEFAULT_DEBUG_CHANNEL(vulkan);
+ 
+ static PFN_vkCreateInstance p_vkCreateInstance;
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/winex11.drv/xrandr.c /Users/sergey/src/wine-11/dlls/winex11.drv/xrandr.c
+--- /Users/sergey/src/wine-11.1/dlls/winex11.drv/xrandr.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/winex11.drv/xrandr.c	2026-01-24 19:50:48
+@@ -41,7 +41,12 @@ WINE_DECLARE_DEBUG_CHANNEL(winediag);
+ #endif
+ 
+ #ifdef SONAME_LIBXRANDR
++#undef SONAME_LIBXRANDR
++#endif
++#define SONAME_LIBXRANDR "libXrandr.2.dylib"
+ 
++#ifdef SONAME_LIBXRANDR
++
+ #include "wine/vulkan.h"
+ #include "wine/vulkan_driver.h"
+ 
+@@ -139,6 +144,11 @@ sym_not_found:
+     }
+     return r;
+ }
++#ifdef SONAME_LIBVULKAN
++#undef SONAME_LIBVULKAN
++#endif
++//#define SONAME_LIBVULKAN "vulkan-1.dll"
++#define SONAME_LIBVULKAN "libMoltenVK.dylib"
+ 
+ #ifdef SONAME_LIBVULKAN
+ 
+diff -Nurpb /Users/sergey/src/wine-11.1/dlls/winmm/waveform.c /Users/sergey/src/wine-11/dlls/winmm/waveform.c
+--- /Users/sergey/src/wine-11.1/dlls/winmm/waveform.c	2026-01-23 23:45:27
++++ /Users/sergey/src/wine-11/dlls/winmm/waveform.c	2026-01-24 19:50:48
+@@ -576,6 +576,7 @@ static HRESULT WINMM_EnumDevices(WINMM_MMDevice **devi
+     if(*devcount > 0){
+         UINT n, count = 1;
+         IMMDevice *def_dev = NULL;
++        WCHAR *def_dev_id = NULL;
+ 
+         *devices = calloc(*devcount, sizeof(WINMM_MMDevice));
+         if(!*devices){
+@@ -593,15 +594,26 @@ static HRESULT WINMM_EnumDevices(WINMM_MMDevice **devi
+         /* make sure that device 0 is the default device */
+         IMMDeviceEnumerator_GetDefaultAudioEndpoint(devenum,
+                 flow, eConsole, &def_dev);
++        if(def_dev)
++           IMMDevice_GetId(def_dev, &def_dev_id);
+ 
+         for(n = 0; n < *devcount; ++n){
+             IMMDevice *device;
+ 
+             hr = IMMDeviceCollection_Item(devcoll, n, &device);
+             if(SUCCEEDED(hr)){
++            	WCHAR *dev_id = NULL;
++            	BOOL is_default = FALSE;
+                 WINMM_InitMMDevice(flow, device, &(*devices)[n], n);
+ 
+-                if(device == def_dev)
++                if(def_dev_id){
++                  IMMDevice_GetId(device, &dev_id);
++                  if(dev_id && !lstrcmpW(dev_id, def_dev_id))
++                     is_default = TRUE;
++                  CoTaskMemFree(dev_id);
++                }
++
++                if(is_default)
+                     (*map)[0] = &(*devices)[n];
+                 else{
+                     (*map)[count] = &(*devices)[n];
